@@ -29,3 +29,7 @@ uploads/
 *.tmp
 TODO
 Examples
+
+# Generated reports
+reports/*.html
+tests/output/
