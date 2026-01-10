@@ -10,10 +10,12 @@ import pytesseract
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from fastapi.requests import Request
 from pydantic import BaseModel
 
 app = FastAPI(title="Sudoku Solver")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
@@ -339,6 +341,13 @@ def simulated_annealing(puzzle: List[List[int]],
 async def home(request: Request):
     """Serve the main page."""
     return templates.TemplateResponse("index.html", {"request": request})
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Serve the service worker from root for proper scope."""
+    from fastapi.responses import FileResponse
+    return FileResponse("sw.js", media_type="application/javascript")
 
 
 @app.post("/api/extract", response_model=ExtractResponse)

@@ -5,3 +5,6 @@ pytesseract
 numpy
 python-multipart
 jinja2
+pydantic-settings
+matplotlib
+pytest

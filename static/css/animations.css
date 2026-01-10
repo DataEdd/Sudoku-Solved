@@ -1,0 +1,223 @@
+/* animations.css - All animations and transitions */
+
+/* ============== Keyframes ============== */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes sweep {
+    0% {
+        left: -50%;
+    }
+    100% {
+        left: 100%;
+    }
+}
+
+@keyframes cellReveal {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.2);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+@keyframes shake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    20%, 60% {
+        transform: translateX(-5px);
+    }
+    40%, 80% {
+        transform: translateX(5px);
+    }
+}
+
+@keyframes drawLine {
+    from {
+        stroke-dashoffset: 100;
+    }
+    to {
+        stroke-dashoffset: 0;
+    }
+}
+
+@keyframes glow {
+    0%, 100% {
+        box-shadow: 0 0 5px rgba(0, 212, 255, 0.5);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(0, 212, 255, 0.8);
+    }
+}
+
+/* ============== Processing Grid Animation ============== */
+.processing__grid-overlay line {
+    stroke: var(--color-cyan);
+    stroke-width: 0.5;
+    stroke-dasharray: 100;
+    animation: drawLine 1.5s ease-out forwards;
+}
+
+.processing__grid-overlay line:nth-child(1) { animation-delay: 0s; }
+.processing__grid-overlay line:nth-child(2) { animation-delay: 0.1s; }
+.processing__grid-overlay line:nth-child(3) { animation-delay: 0.2s; }
+.processing__grid-overlay line:nth-child(4) { animation-delay: 0.3s; }
+.processing__grid-overlay line:nth-child(5) { animation-delay: 0.4s; }
+.processing__grid-overlay line:nth-child(6) { animation-delay: 0.5s; }
+.processing__grid-overlay line:nth-child(7) { animation-delay: 0.6s; }
+.processing__grid-overlay line:nth-child(8) { animation-delay: 0.7s; }
+
+/* ============== Solution Cell Reveal ============== */
+.sudoku-cell--revealing {
+    animation: cellReveal 0.3s ease-out forwards;
+}
+
+/* ============== Error Shake ============== */
+.sudoku-grid--error {
+    animation: shake 0.5s ease-out;
+}
+
+/* ============== Screen Transitions ============== */
+.screen--entering {
+    animation: fadeIn var(--transition-normal) forwards;
+}
+
+.screen--exiting {
+    animation: fadeOut var(--transition-normal) forwards;
+}
+
+/* ============== Modal Animations ============== */
+.modal__content {
+    animation: scaleIn var(--transition-normal) ease-out;
+}
+
+/* ============== Button Press Animation ============== */
+.btn-capture--capturing .btn-capture__inner {
+    animation: pulse 0.3s ease-out;
+}
+
+/* ============== Success Animation ============== */
+.success-icon {
+    animation: scaleIn 0.5s ease-out;
+}
+
+.success-banner h2 {
+    animation: slideDown 0.5s ease-out 0.2s both;
+}
+
+.success-banner p {
+    animation: slideDown 0.5s ease-out 0.3s both;
+}
+
+/* ============== History Card Animation ============== */
+.history-card {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.history-card:nth-child(2) { animation-delay: 0.05s; }
+.history-card:nth-child(3) { animation-delay: 0.1s; }
+.history-card:nth-child(4) { animation-delay: 0.15s; }
+.history-card:nth-child(5) { animation-delay: 0.2s; }
+.history-card:nth-child(6) { animation-delay: 0.25s; }
+
+/* ============== Loading States ============== */
+.loading {
+    position: relative;
+    pointer-events: none;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ============== Glow Effect ============== */
+.glow {
+    animation: glow 2s ease-in-out infinite;
+}
+
+/* ============== Reduced Motion ============== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
