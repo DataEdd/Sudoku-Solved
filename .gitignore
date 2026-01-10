@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+
+# Claude Code local settings
+.claude/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads/temp files
+uploads/
+*.tmp
