@@ -1,29 +1,34 @@
 """
-Interactive ground truth annotation tool for OCR parameter tuning.
+Interactive ground truth annotation tool (v2).
 
-Opens each image in an OpenCV window. Click 8 corners in two phases:
-  Phase 1: 4 outer corners (TL, TR, BR, BL) of the full grid
-  Phase 2: 4 center-box corners (CTL, CTR, CBR, CBL) at intersections
-           of rows 3,6 and columns 3,6
+16-point corner annotation + multi-digit cell support.
 
-Then type the 9x9 grid in the terminal. Saves to evaluation/ground_truth.json.
+Opens each image in an OpenCV window. Click 16 points — all intersections
+of the thick grid lines (outer border + box separators), row by row:
+
+    Row 0 (top):    P0  P1  P2  P3
+    Row 3:          P4  P5  P6  P7
+    Row 6:          P8  P9  P10 P11
+    Row 9 (bottom): P12 P13 P14 P15
+
+Then type the 9x9 grid in the terminal. Supports multi-digit cells (e.g. 1/7).
+Saves to evaluation/ground_truth.json.
 
 Usage:
     cd Sudoku-Solved/
     python -m evaluation.annotate
 
 Controls:
-    Left click  — place next corner point
-    'u'         — undo last corner
-    'r'         — reset all corners for current phase
+    Left click  — place next point
+    'u'         — undo last point
+    'r'         — reset all points
     's'         — skip image
     'q'         — quit (progress is saved)
-    Enter       — confirm current phase / confirm all and proceed
+    Enter       — confirm all 16 points and proceed to grid entry
 """
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -36,32 +41,28 @@ os.chdir(PROJECT_ROOT)
 IMAGE_DIR = "Examples/Ground Example"
 OUTPUT_PATH = "evaluation/ground_truth.json"
 
-OUTER_LABELS = ["TL", "TR", "BR", "BL"]
-CENTER_LABELS = ["CTL", "CTR", "CBR", "CBL"]
+# 16 point labels: row-major P0..P15
+POINT_LABELS = [f"P{i}" for i in range(16)]
+POINT_DESCRIPTIONS = []
+for r_idx, row_label in enumerate(["row 0", "row 3", "row 6", "row 9"]):
+    for c_idx, col_label in enumerate(["col 0", "col 3", "col 6", "col 9"]):
+        POINT_DESCRIPTIONS.append(f"{row_label}, {col_label}")
 
-OUTER_COLORS = [
-    (0, 255, 0),    # TL = green
-    (0, 255, 255),  # TR = yellow
-    (0, 0, 255),    # BR = red
-    (255, 0, 255),  # BL = magenta
-]
-CENTER_COLORS = [
-    (255, 255, 0),  # CTL = cyan
-    (255, 200, 0),  # CTR = light cyan
-    (255, 150, 0),  # CBR = blue-ish
-    (255, 100, 0),  # CBL = darker blue
+# Colors per row of points
+ROW_COLORS = [
+    (0, 255, 0),    # row 0 = green
+    (255, 255, 0),  # row 3 = cyan
+    (0, 255, 255),  # row 6 = yellow
+    (0, 0, 255),    # row 9 = red
 ]
 
 
 class CornerPicker:
-    """OpenCV mouse callback handler for picking 8 corners in two phases."""
+    """OpenCV mouse callback handler for picking 16 grid intersection points."""
 
     def __init__(self, image):
         self.original = image.copy()
-        self.outer_corners = []
-        self.center_corners = []
-        self.phase = "outer"
-        self.done = False
+        self.points = []
         self._last_click_time = 0.0
 
     def mouse_callback(self, event, x, y, flags, param):
@@ -69,108 +70,87 @@ class CornerPicker:
             return
         now = time.monotonic()
         if now - self._last_click_time < 0.3:
-            return  # debounce double-clicks
+            return  # debounce
         self._last_click_time = now
-        if self.phase == "outer" and len(self.outer_corners) < 4:
-            self.outer_corners.append((x, y))
-        elif self.phase == "center" and len(self.center_corners) < 4:
-            self.center_corners.append((x, y))
+        if len(self.points) < 16:
+            self.points.append((x, y))
 
     def undo(self):
-        if self.phase == "center" and self.center_corners:
-            self.center_corners.pop()
-        elif self.phase == "center" and not self.center_corners:
-            self.phase = "outer"
-            if self.outer_corners:
-                self.outer_corners.pop()
-        elif self.phase == "outer" and self.outer_corners:
-            self.outer_corners.pop()
+        if self.points:
+            self.points.pop()
 
     def reset(self):
-        if self.phase == "center":
-            self.center_corners = []
-        else:
-            self.outer_corners = []
+        self.points = []
 
     def draw(self):
         img = self.original.copy()
 
-        # Draw outer corners and quad
-        for i, (x, y) in enumerate(self.outer_corners):
-            color = OUTER_COLORS[i]
-            cv2.circle(img, (x, y), 8, color, -1)
-            cv2.circle(img, (x, y), 10, (255, 255, 255), 2)
-            cv2.putText(img, OUTER_LABELS[i], (x + 12, y - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        if len(self.outer_corners) >= 2:
-            for i in range(len(self.outer_corners) - 1):
-                cv2.line(img, self.outer_corners[i], self.outer_corners[i + 1], (0, 255, 0), 2)
-            if len(self.outer_corners) == 4:
-                cv2.line(img, self.outer_corners[3], self.outer_corners[0], (0, 255, 0), 2)
+        # Draw placed points with row-based colors and connecting lines
+        for i, (x, y) in enumerate(self.points):
+            row = i // 4
+            color = ROW_COLORS[row]
+            cv2.circle(img, (x, y), 7, color, -1)
+            cv2.circle(img, (x, y), 9, (255, 255, 255), 2)
+            cv2.putText(img, POINT_LABELS[i], (x + 10, y - 8),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        # Draw center corners and quad
-        for i, (x, y) in enumerate(self.center_corners):
-            color = CENTER_COLORS[i]
-            cv2.circle(img, (x, y), 8, color, -1)
-            cv2.circle(img, (x, y), 10, (255, 255, 255), 2)
-            cv2.putText(img, CENTER_LABELS[i], (x + 12, y - 8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        if len(self.center_corners) >= 2:
-            for i in range(len(self.center_corners) - 1):
-                cv2.line(img, self.center_corners[i], self.center_corners[i + 1], (255, 255, 0), 2)
-            if len(self.center_corners) == 4:
-                cv2.line(img, self.center_corners[3], self.center_corners[0], (255, 255, 0), 2)
+        # Draw horizontal lines (within each row)
+        for row in range(4):
+            start = row * 4
+            for col in range(3):
+                idx_a = start + col
+                idx_b = start + col + 1
+                if idx_a < len(self.points) and idx_b < len(self.points):
+                    cv2.line(img, self.points[idx_a], self.points[idx_b], ROW_COLORS[row], 2)
+
+        # Draw vertical lines (between rows)
+        for row in range(3):
+            for col in range(4):
+                idx_a = row * 4 + col
+                idx_b = (row + 1) * 4 + col
+                if idx_a < len(self.points) and idx_b < len(self.points):
+                    color_a = ROW_COLORS[row]
+                    color_b = ROW_COLORS[row + 1]
+                    avg_color = tuple((a + b) // 2 for a, b in zip(color_a, color_b))
+                    cv2.line(img, self.points[idx_a], self.points[idx_b], avg_color, 2)
 
         # Instructions
-        if self.phase == "outer":
-            if len(self.outer_corners) < 4:
-                label = OUTER_LABELS[len(self.outer_corners)]
-                text = f"OUTER: Click {label} ({len(self.outer_corners)}/4)  |  'u'=undo  'r'=reset  's'=skip  'q'=quit"
-            else:
-                text = "OUTER done. Press ENTER for center-box phase  |  'r'=reset  'q'=quit"
+        n = len(self.points)
+        if n < 16:
+            label = POINT_LABELS[n]
+            desc = POINT_DESCRIPTIONS[n]
+            text = f"Click {label} ({desc}) - {n}/16  |  'u'=undo  'r'=reset  's'=skip  'q'=quit"
         else:
-            if len(self.center_corners) < 4:
-                label = CENTER_LABELS[len(self.center_corners)]
-                text = f"CENTER BOX: Click {label} ({len(self.center_corners)}/4)  |  'u'=undo  'r'=reset  'q'=quit"
-            else:
-                text = "All 8 corners set. Press ENTER to confirm  |  'r'=reset  'q'=quit"
+            text = "All 16 points placed. Press ENTER to confirm  |  'u'=undo  'r'=reset  'q'=quit"
 
-        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1)
+        # Draw text with outline for readability
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
+        cv2.putText(img, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
         return img
 
 
-def warp_grid_piecewise(image, outer_corners, center_corners, size=450):
-    """Piecewise perspective transform using 8 annotated corners.
+def warp_grid_piecewise(image, points_16, size=450):
+    """Piecewise perspective transform using 16 annotated grid intersection points.
 
-    Divides the grid into 9 box-regions using outer + center corners
-    plus interpolated boundary midpoints. Each region gets its own
-    local homography.
+    All 9 quads use real annotated corners — no interpolation needed.
     """
-    outer = np.array(outer_corners, dtype=np.float32)
-    center = np.array(center_corners, dtype=np.float32)
-
-    TL, TR, BR, BL = outer[0], outer[1], outer[2], outer[3]
-    CTL, CTR, CBR, CBL = center[0], center[1], center[2], center[3]
-
-    # Interpolate boundary midpoints
-    T3 = TL + (TR - TL) / 3
-    T6 = TL + (TR - TL) * 2 / 3
-    B3 = BL + (BR - BL) / 3
-    B6 = BL + (BR - BL) * 2 / 3
-    L3 = TL + (BL - TL) / 3
-    L6 = TL + (BL - TL) * 2 / 3
-    R3 = TR + (BR - TR) / 3
-    R6 = TR + (BR - TR) * 2 / 3
+    pts = np.array(points_16, dtype=np.float32)
 
     s3 = size / 3
     s6 = size * 2 / 3
 
+    # 9 source quads: each is [TL, TR, BR, BL] of a box region
     src_quads = [
-        [TL, T3, CTL, L3], [T3, T6, CTR, CTL], [T6, TR, R3, CTR],
-        [L3, CTL, CBL, L6], [CTL, CTR, CBR, CBL], [CTR, R3, R6, CBR],
-        [L6, CBL, B3, BL], [CBL, CBR, B6, B3], [CBR, R6, BR, B6],
+        [pts[0], pts[1], pts[5], pts[4]],     # Box 0
+        [pts[1], pts[2], pts[6], pts[5]],     # Box 1
+        [pts[2], pts[3], pts[7], pts[6]],     # Box 2
+        [pts[4], pts[5], pts[9], pts[8]],     # Box 3
+        [pts[5], pts[6], pts[10], pts[9]],    # Box 4
+        [pts[6], pts[7], pts[11], pts[10]],   # Box 5
+        [pts[8], pts[9], pts[13], pts[12]],   # Box 6
+        [pts[9], pts[10], pts[14], pts[13]],  # Box 7
+        [pts[10], pts[11], pts[15], pts[14]], # Box 8
     ]
 
     dst_quads = [
@@ -215,9 +195,9 @@ def draw_grid_overlay(warped):
 
 
 def pick_corners(image, title):
-    """Open window for 8-point corner selection.
+    """Open window for 16-point corner selection.
 
-    Returns (outer_corners, center_corners) or None (quit) or "skip".
+    Returns list of 16 (x, y) tuples, or None (quit), or "skip".
     """
     h, w = image.shape[:2]
     max_dim = 900
@@ -252,28 +232,60 @@ def pick_corners(image, title):
             return "skip"
 
         if key in (13, 10):  # Enter
-            if picker.phase == "outer" and len(picker.outer_corners) == 4:
-                picker.phase = "center"
-            elif picker.phase == "center" and len(picker.center_corners) == 4:
-                outer = picker.outer_corners
-                center = picker.center_corners
+            if len(picker.points) == 16:
+                points = list(picker.points)
                 cv2.destroyWindow(win_name)
                 if scale != 1.0:
-                    outer = [(int(x / scale), int(y / scale)) for x, y in outer]
-                    center = [(int(x / scale), int(y / scale)) for x, y in center]
-                return outer, center
+                    points = [(int(x / scale), int(y / scale)) for x, y in points]
+                return points
+
+
+def parse_cell(token):
+    """Parse a single cell token.
+
+    Returns int or list[int].
+    '0' -> 0, '3' -> 3, '1/7' -> [1, 7], '3/8/9' -> [3, 8, 9]
+    Raises ValueError on invalid input.
+    """
+    if '/' in token:
+        parts = [int(p) for p in token.split('/')]
+        if len(parts) < 2:
+            raise ValueError(f"Multi-digit cell needs 2+ values: {token}")
+        for v in parts:
+            if not 1 <= v <= 9:
+                raise ValueError(f"Multi-digit values must be 1-9: {token}")
+        unique = sorted(set(parts))
+        if len(unique) < 2:
+            raise ValueError(f"Multi-digit cell needs 2+ unique values: {token}")
+        return unique
+    else:
+        v = int(token)
+        if not 0 <= v <= 9:
+            raise ValueError(f"Value must be 0-9: {token}")
+        return v
+
+
+def format_cell(cell):
+    """Format a cell value for display."""
+    if isinstance(cell, list):
+        return '/'.join(str(v) for v in cell)
+    return str(cell) if cell else '.'
 
 
 def enter_grid(warped):
-    """Show warped grid and prompt user to type the 9x9 grid in terminal."""
+    """Show warped grid and prompt user to type the 9x9 grid in terminal.
+
+    Supports multi-digit cells with X/Y notation.
+    """
     overlay = draw_grid_overlay(warped)
     display = cv2.resize(overlay, (600, 600), interpolation=cv2.INTER_CUBIC)
     cv2.imshow("Warped Grid (type grid in terminal)", display)
     cv2.waitKey(100)
 
     print("\n  Type the 9x9 grid (0 for empty cells).")
-    print("  Enter one row per line, digits separated by spaces.")
-    print("  Example: 0 3 0 0 7 0 5 0 6")
+    print("  Enter one row per line, values separated by spaces.")
+    print("  Use X/Y for ambiguous cells (e.g., 1/7 means either 1 or 7).")
+    print("  Example: 5 0 9 1/7 0 0 0 2 0")
     print("  Type 'skip' to skip this image.\n")
 
     grid = []
@@ -285,23 +297,23 @@ def enter_grid(warped):
                     cv2.destroyWindow("Warped Grid (type grid in terminal)")
                     return None
 
-                # Support compact format (no spaces) or spaced format
-                if len(line.replace(" ", "").replace(",", "")) == 9 and " " not in line and "," not in line:
-                    values = [int(c) for c in line]
-                else:
-                    values = [int(x) for x in line.replace(",", " ").split()]
+                tokens = line.split()
 
-                if len(values) != 9:
-                    print(f"    Need 9 values, got {len(values)}. Try again.")
-                    continue
-                if not all(0 <= v <= 9 for v in values):
-                    print("    Values must be 0-9. Try again.")
+                # Support compact format: 9 chars with no spaces and no slashes
+                if len(tokens) == 1 and len(line) == 9 and '/' not in line:
+                    tokens = list(line)
+
+                if len(tokens) != 9:
+                    print(f"    Need 9 values, got {len(tokens)}. Try again.")
                     continue
 
-                grid.append(values)
+                row = [parse_cell(t) for t in tokens]
+                grid.append(row)
                 break
-            except (ValueError, KeyboardInterrupt):
-                print("    Invalid input. Use digits 0-9 separated by spaces.")
+            except ValueError as e:
+                print(f"    Invalid: {e}. Try again.")
+            except KeyboardInterrupt:
+                print("    Use 'skip' to skip or 'q' in the window to quit.")
 
     cv2.destroyWindow("Warped Grid (type grid in terminal)")
     return grid
@@ -327,7 +339,7 @@ def get_already_annotated(data):
 
 
 def main():
-    # Collect all images from Ground Example directory
+    # Collect all images from Ground Example directory, sorted
     all_files = sorted([
         f for f in os.listdir(IMAGE_DIR)
         if f.lower().endswith((".jpeg", ".jpg", ".png", ".webp"))
@@ -339,21 +351,21 @@ def main():
     remaining = [p for p in image_paths if p not in already_done]
     done_count = len(image_paths) - len(remaining)
 
-    print("=" * 60)
-    print("  SUDOKU GROUND TRUTH ANNOTATION TOOL")
-    print("=" * 60)
+    print("=" * 65)
+    print("  SUDOKU GROUND TRUTH ANNOTATION TOOL v2 (16-point)")
+    print("=" * 65)
     print(f"\n  Source: {IMAGE_DIR}/")
     print(f"  Images: {len(image_paths)} total, {done_count} done, {len(remaining)} remaining")
     print(f"  Saving to: {OUTPUT_PATH}")
     print()
     print("  For each image:")
-    print("    1. Click 4 OUTER corners: TL -> TR -> BR -> BL (green)")
-    print("    2. Press Enter, then click 4 CENTER BOX corners: CTL -> CTR -> CBR -> CBL (cyan)")
-    print("       (intersections of 3rd/6th grid lines)")
-    print("    3. Type the grid in the terminal (0 = empty)")
+    print("    1. Click 16 grid intersection points (row by row, left to right)")
+    print("       P0-P3 (top edge), P4-P7 (row 3), P8-P11 (row 6), P12-P15 (bottom)")
+    print("    2. Press Enter to confirm")
+    print("    3. Type the grid in the terminal (0=empty, X/Y for ambiguous)")
     print()
     print("  Keys: 'u'=undo  'r'=reset  's'=skip  'q'=quit")
-    print("=" * 60)
+    print("=" * 65)
 
     for idx, img_path in enumerate(remaining):
         img_name = Path(img_path).name
@@ -364,7 +376,7 @@ def main():
             print(f"  ERROR: Could not load {img_path}")
             continue
 
-        # Step 1: Pick corners
+        # Step 1: Pick 16 corners
         result = pick_corners(image, img_name)
 
         if result is None:
@@ -376,12 +388,11 @@ def main():
             print("  Skipped.")
             continue
 
-        outer_corners, center_corners = result
-        print(f"  Outer corners:  {outer_corners}")
-        print(f"  Center corners: {center_corners}")
+        points_16 = result
+        print(f"  16 points placed.")
 
         # Step 2: Show piecewise-warped grid and enter values
-        warped = warp_grid_piecewise(image, outer_corners, center_corners)
+        warped = warp_grid_piecewise(image, points_16)
         grid = enter_grid(warped)
 
         if grid is None:
@@ -390,14 +401,13 @@ def main():
 
         entry = {
             "path": img_path,
-            "outer_corners": outer_corners,
-            "center_corners": center_corners,
+            "corners_16": [list(pt) for pt in points_16],
             "grid": grid,
         }
 
         print("\n  Grid entered:")
         for row in grid:
-            print("    " + " ".join(str(v) if v else "." for v in row))
+            print("    " + " ".join(format_cell(v) for v in row))
 
         data["images"].append(entry)
         save_annotations(data)
