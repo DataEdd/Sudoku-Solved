@@ -1,0 +1,519 @@
+{
+  "params": {
+    "clahe_clip": 2.0,
+    "clahe_tile": [
+      8,
+      8
+    ],
+    "blur_k": 5,
+    "block_size": 11,
+    "thresh_c": 2,
+    "epsilon": 0.02,
+    "min_area_ratio": 0.01
+  },
+  "summary": {
+    "detection_rate": "27/38",
+    "detected": 27,
+    "total": 38,
+    "mean_error_px": 18.73,
+    "median_error_px": 1.52,
+    "max_error_px": 328.26,
+    "mean_iou": 0.9294
+  },
+  "per_image": [
+    {
+      "path": "Examples/Ground Example/_0_1436352.jpeg",
+      "detected": true,
+      "corner_errors": [
+        21.5,
+        20.74,
+        21.31,
+        19.75
+      ],
+      "mean_error": 20.82,
+      "iou": 0.8783,
+      "confidence": 0.8336
+    },
+    {
+      "path": "Examples/Ground Example/_10_970725.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.25,
+        2.85,
+        0.74,
+        0.51
+      ],
+      "mean_error": 1.09,
+      "iou": 0.9949,
+      "confidence": 0.8957
+    },
+    {
+      "path": "Examples/Ground Example/_11_257486.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_12_7756154.jpeg",
+      "detected": true,
+      "corner_errors": [
+        3.31,
+        2.6,
+        2.14,
+        4.02
+      ],
+      "mean_error": 3.02,
+      "iou": 0.9854,
+      "confidence": 1.0
+    },
+    {
+      "path": "Examples/Ground Example/_13_4195024.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.39,
+        2.47,
+        1.0,
+        2.27
+      ],
+      "mean_error": 1.53,
+      "iou": 0.9905,
+      "confidence": 0.7767
+    },
+    {
+      "path": "Examples/Ground Example/_15_7101336.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.04,
+        1.6,
+        0.43,
+        1.94
+      ],
+      "mean_error": 1.25,
+      "iou": 0.9928,
+      "confidence": 0.7917
+    },
+    {
+      "path": "Examples/Ground Example/_16_1564820.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.87,
+        0.83,
+        1.78,
+        1.4
+      ],
+      "mean_error": 1.22,
+      "iou": 0.9904,
+      "confidence": 0.4427
+    },
+    {
+      "path": "Examples/Ground Example/_17_3814183.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_18_2132308.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.97,
+        1.73,
+        0.36,
+        1.59
+      ],
+      "mean_error": 1.16,
+      "iou": 0.9927,
+      "confidence": 0.8728
+    },
+    {
+      "path": "Examples/Ground Example/_19_2711222.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.95,
+        1.62,
+        1.45,
+        0.68
+      ],
+      "mean_error": 1.18,
+      "iou": 0.9905,
+      "confidence": 0.4255
+    },
+    {
+      "path": "Examples/Ground Example/_1_2180648.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_21_3151013.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_22_7288515.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.92,
+        0.72,
+        0.42,
+        0.9
+      ],
+      "mean_error": 0.74,
+      "iou": 0.9949,
+      "confidence": 0.8415
+    },
+    {
+      "path": "Examples/Ground Example/_23_8824051.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_24_6079304.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_25_6973103.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.07,
+        2.19,
+        0.55,
+        0.56
+      ],
+      "mean_error": 1.09,
+      "iou": 0.9932,
+      "confidence": 0.8256
+    },
+    {
+      "path": "Examples/Ground Example/_26_2367620.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_27_6709977.jpeg",
+      "detected": true,
+      "corner_errors": [
+        3.79,
+        3.33,
+        2.05,
+        3.54
+      ],
+      "mean_error": 3.18,
+      "iou": 0.9796,
+      "confidence": 0.7523
+    },
+    {
+      "path": "Examples/Ground Example/_28_5892129.jpeg",
+      "detected": true,
+      "corner_errors": [
+        2.7,
+        1.52,
+        0.64,
+        3.07
+      ],
+      "mean_error": 1.98,
+      "iou": 0.9813,
+      "confidence": 0.3288
+    },
+    {
+      "path": "Examples/Ground Example/_29_6619443.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.26,
+        0.84,
+        1.02,
+        1.99
+      ],
+      "mean_error": 1.28,
+      "iou": 0.9889,
+      "confidence": 0.4638
+    },
+    {
+      "path": "Examples/Ground Example/_2_7195276.jpeg",
+      "detected": true,
+      "corner_errors": [
+        16.03,
+        2.24,
+        1.59,
+        9.22
+      ],
+      "mean_error": 7.27,
+      "iou": 0.9605,
+      "confidence": 0.9973
+    },
+    {
+      "path": "Examples/Ground Example/_31_3233783.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.25,
+        1.17,
+        1.35,
+        1.68
+      ],
+      "mean_error": 1.36,
+      "iou": 0.992,
+      "confidence": 0.6233
+    },
+    {
+      "path": "Examples/Ground Example/_33_3803709.jpeg",
+      "detected": true,
+      "corner_errors": [
+        195.19,
+        189.02,
+        28.2,
+        27.72
+      ],
+      "mean_error": 110.03,
+      "iou": 0.5147,
+      "confidence": 0.5332
+    },
+    {
+      "path": "Examples/Ground Example/_35_4619569.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_36_7633287.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.72,
+        1.79,
+        1.5,
+        0.81
+      ],
+      "mean_error": 1.21,
+      "iou": 0.9924,
+      "confidence": 0.5909
+    },
+    {
+      "path": "Examples/Ground Example/_37_8708315.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_38_4338143.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_39_4570412.jpeg",
+      "detected": false,
+      "corner_errors": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
+    },
+    {
+      "path": "Examples/Ground Example/_40_9914911.jpeg",
+      "detected": true,
+      "corner_errors": [
+        2.35,
+        3.59,
+        4.12,
+        3.29
+      ],
+      "mean_error": 3.34,
+      "iou": 0.9858,
+      "confidence": 1.0
+    },
+    {
+      "path": "Examples/Ground Example/_41_6129749.jpeg",
+      "detected": true,
+      "corner_errors": [
+        2.04,
+        1.24,
+        0.86,
+        1.77
+      ],
+      "mean_error": 1.48,
+      "iou": 0.9927,
+      "confidence": 1.0
+    },
+    {
+      "path": "Examples/Ground Example/_44_756500.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.6,
+        1.92,
+        1.98,
+        1.37
+      ],
+      "mean_error": 1.72,
+      "iou": 0.9911,
+      "confidence": 0.9659
+    },
+    {
+      "path": "Examples/Ground Example/_46_3178649.jpeg",
+      "detected": true,
+      "corner_errors": [
+        4.04,
+        1.73,
+        1.23,
+        0.44
+      ],
+      "mean_error": 1.86,
+      "iou": 0.9881,
+      "confidence": 0.7552
+    },
+    {
+      "path": "Examples/Ground Example/_4_3941682.jpeg",
+      "detected": true,
+      "corner_errors": [
+        343.59,
+        316.48,
+        320.91,
+        332.07
+      ],
+      "mean_error": 328.26,
+      "iou": 0.0,
+      "confidence": 0.4123
+    },
+    {
+      "path": "Examples/Ground Example/_5_6718731.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.87,
+        1.5,
+        1.86,
+        3.32
+      ],
+      "mean_error": 1.89,
+      "iou": 0.9837,
+      "confidence": 0.3712
+    },
+    {
+      "path": "Examples/Ground Example/_6_3429557.jpeg",
+      "detected": true,
+      "corner_errors": [
+        4.09,
+        4.22,
+        3.48,
+        5.39
+      ],
+      "mean_error": 4.29,
+      "iou": 0.9601,
+      "confidence": 0.4633
+    },
+    {
+      "path": "Examples/Ground Example/_8_607650.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.9,
+        0.41,
+        1.52,
+        1.59
+      ],
+      "mean_error": 1.1,
+      "iou": 0.9951,
+      "confidence": 1.0
+    },
+    {
+      "path": "Examples/Ground Example/_20_2431873.jpeg",
+      "detected": true,
+      "corner_errors": [
+        1.68,
+        1.3,
+        1.58,
+        1.5
+      ],
+      "mean_error": 1.52,
+      "iou": 0.9906,
+      "confidence": 0.8799
+    },
+    {
+      "path": "Examples/Ground Example/_3_3543940.jpeg",
+      "detected": true,
+      "corner_errors": [
+        0.92,
+        0.26,
+        0.3,
+        1.7
+      ],
+      "mean_error": 0.8,
+      "iou": 0.9941,
+      "confidence": 0.5174
+    }
+  ]
+}
