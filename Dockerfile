@@ -19,6 +19,5 @@ COPY app/ app/
 COPY templates/ templates/
 COPY static/ static/
 COPY sw.js .
-COPY Examples/ Examples/
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]
