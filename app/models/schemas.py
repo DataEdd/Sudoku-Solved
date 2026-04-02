@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,13 +22,19 @@ class SudokuGrid(BaseModel):
         return v
 
 
+class SolveRequest(SudokuGrid):
+    """Request model for solving — grid + solver method."""
+
+    method: Literal["backtracking", "simulated_annealing"] = "backtracking"
+
+
 class ExtractResponse(BaseModel):
     """Response model for grid extraction."""
 
     success: bool
     grid: Optional[List[List[int]]] = None
+    confidence_map: Optional[List[List[float]]] = None
     message: str = ""
-    confidence: Optional[float] = None
 
 
 class SolveResponse(BaseModel):
@@ -37,4 +43,6 @@ class SolveResponse(BaseModel):
     success: bool
     solution: Optional[List[List[int]]] = None
     iterations: int = 0
+    method: str = "backtracking"
+    solve_time_ms: float = 0.0
     message: str = ""

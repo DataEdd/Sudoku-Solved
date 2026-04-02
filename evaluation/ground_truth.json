@@ -1,0 +1,41 @@
+{
+  "description": "Test set for Sudoku detection benchmark. Images sampled across rotation angles to test robustness.",
+  "categories": {
+    "clean": "No rotation (0 deg), clean scan-like images",
+    "slight_rotation": "Small rotation (1-15 deg)",
+    "moderate_rotation": "Moderate rotation (30-60 deg)",
+    "heavy_rotation": "Heavy rotation (90-180 deg)",
+    "extreme_rotation": "Extreme rotation (180-300 deg)",
+    "real_photo": "Real photos from unsolved/ directory (perspective, noise, lighting)"
+  },
+  "images": [
+    {"path": "Examples/unsolved/sudoku-puzzle.jpg", "category": "real_photo", "ground_truth_grid": null},
+    {"path": "Examples/unsolved/sudoku-puzzle-863979.jpg", "category": "real_photo", "ground_truth_grid": null},
+    {"path": "Examples/unsolved/0bQYX6pmZoRR9NOFSPc3QqogIfipaCvqgHovs9aq0wc.webp", "category": "real_photo", "ground_truth_grid": null},
+    {"path": "Examples/unsolved/soduku-in-my-local-newspaper-v0-rtitv6e2ur5g1.webp", "category": "real_photo", "ground_truth_grid": null},
+    {"path": "Examples/unsolved/Screenshot 2026-01-08 at 23.09.45.png", "category": "real_photo", "ground_truth_grid": null},
+
+    {"path": "Examples/aug/_0_1018787.jpeg", "category": "clean", "ground_truth_grid": null},
+    {"path": "Examples/aug/_0_7804667.jpeg", "category": "clean", "ground_truth_grid": null},
+    {"path": "Examples/aug/_0_9607135.jpeg", "category": "clean", "ground_truth_grid": null},
+
+    {"path": "Examples/aug/_3_8556815.jpeg", "category": "slight_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_5_3858593.jpeg", "category": "slight_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_10_654435.jpeg", "category": "slight_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_15_2384096.jpeg", "category": "slight_rotation", "ground_truth_grid": null},
+
+    {"path": "Examples/aug/_30_7152726.jpeg", "category": "moderate_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_45_8713189.jpeg", "category": "moderate_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_60_9267220.jpeg", "category": "moderate_rotation", "ground_truth_grid": null},
+
+    {"path": "Examples/aug/_90_9702612.jpeg", "category": "heavy_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_120_737437.jpeg", "category": "heavy_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_150_3638684.jpeg", "category": "heavy_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_180_6858686.jpeg", "category": "heavy_rotation", "ground_truth_grid": null},
+
+    {"path": "Examples/aug/_210_418664.jpeg", "category": "extreme_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_240_3000964.jpeg", "category": "extreme_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_270_8483300.jpeg", "category": "extreme_rotation", "ground_truth_grid": null},
+    {"path": "Examples/aug/_300_6372994.jpeg", "category": "extreme_rotation", "ground_truth_grid": null}
+  ]
+}

@@ -1,0 +1,9 @@
+# Deployment requirements (no PyTorch - uses ONNX Runtime instead)
+fastapi
+uvicorn[standard]
+opencv-python-headless
+numpy
+python-multipart
+jinja2
+pydantic-settings
+onnxruntime

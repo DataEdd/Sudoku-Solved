@@ -2,11 +2,16 @@ venv/
 .git/
 .gitignore
 .claude/
-CLAUDE.md
 __pycache__/
 *.pyc
-README.md
 .DS_Store
-*.md
-TODO
-Examples
+_archive/
+notebooks/
+evaluation/
+reports/
+data/
+*.ipynb
+.pytest_cache/
+# Keep ONNX model, exclude PyTorch checkpoint
+app/ml/checkpoints/sudoku_cnn.pth
+app/ml/checkpoints/training_results.json

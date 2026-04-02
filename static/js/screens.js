@@ -124,9 +124,13 @@ const Screens = {
     },
 
     // Update solve stats
-    updateSolveStats(iterations) {
+    updateSolveStats(iterations, solveTimeMs, method) {
         const el = document.getElementById('solve-stats');
-        if (el) el.textContent = `Solved in ${Utils.formatNumber(iterations)} iterations`;
+        if (!el) return;
+
+        const methodLabel = method === 'backtracking' ? 'Backtracking' : 'Simulated Annealing';
+        const timeStr = solveTimeMs < 1 ? '<1ms' : `${Math.round(solveTimeMs)}ms`;
+        el.textContent = `${methodLabel}: ${Utils.formatNumber(iterations)} steps in ${timeStr}`;
     },
 
     // Set processing image

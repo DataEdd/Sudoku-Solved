@@ -5,8 +5,11 @@ const App = {
         currentGrid: null,
         originalGrid: null,
         solvedGrid: null,
+        confidenceMap: null,
         source: null, // 'camera' | 'uploaded' | 'manual'
-        iterations: 0
+        iterations: 0,
+        solveMethod: 'backtracking',
+        solveTimeMs: 0
     },
 
     // Initialize app
@@ -167,16 +170,23 @@ const App = {
         Camera.stop();
 
         try {
+            Screens.updateProcessingText('Detecting grid...');
             const result = await API.extractGrid(blob);
 
             if (result.success && result.grid) {
                 this.state.currentGrid = result.grid;
                 this.state.originalGrid = Utils.cloneGrid(result.grid);
+                this.state.confidenceMap = result.confidence_map || null;
+
+                Screens.updateProcessingText('Grid detected!');
 
                 // Show review screen
                 Screens.navigate('review');
                 Grid.create('review-grid', { editable: true });
-                Grid.populate('review-grid', result.grid, { markFixed: true });
+                Grid.populate('review-grid', result.grid, {
+                    markFixed: true,
+                    confidenceMap: this.state.confidenceMap
+                });
             } else {
                 Screens.showError(
                     'No Grid Detected',
@@ -225,16 +235,17 @@ const App = {
         }, 100);
 
         try {
-            const result = await API.solvePuzzle(grid);
+            const result = await API.solvePuzzle(grid, this.state.solveMethod);
             clearInterval(counterInterval);
 
             if (result.success && result.solution) {
                 this.state.solvedGrid = result.solution;
                 this.state.iterations = result.iterations;
+                this.state.solveTimeMs = result.solve_time_ms || 0;
 
                 // Show solution screen
                 Screens.navigate('solution');
-                Screens.updateSolveStats(result.iterations);
+                Screens.updateSolveStats(result.iterations, result.solve_time_ms, result.method);
 
                 Grid.create('solution-grid');
                 Grid.populate('solution-grid', this.state.originalGrid, { markFixed: true });
@@ -273,8 +284,11 @@ const App = {
             currentGrid: null,
             originalGrid: null,
             solvedGrid: null,
+            confidenceMap: null,
             source: null,
-            iterations: 0
+            iterations: 0,
+            solveMethod: 'backtracking',
+            solveTimeMs: 0
         };
         Screens.navigate('camera');
     },

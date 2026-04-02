@@ -19,19 +19,25 @@ const API = {
     },
 
     // Solve puzzle
-    async solvePuzzle(grid) {
+    async solvePuzzle(grid, method = 'backtracking') {
         const response = await fetch('/api/solve', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ grid })
+            body: JSON.stringify({ grid, method })
         });
 
         if (!response.ok) {
             throw new Error(`Network error: ${response.status}`);
         }
 
+        return response.json();
+    },
+
+    // Health check
+    async health() {
+        const response = await fetch('/api/health');
         return response.json();
     }
 };

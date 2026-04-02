@@ -1,20 +1,82 @@
 """
-Sudoku solver using simulated annealing.
+Sudoku solvers: backtracking (primary) and simulated annealing (secondary).
 
-The algorithm works by:
-1. Initializing each 3x3 box with the missing numbers (randomly placed)
-2. Swapping non-fixed cells within boxes to minimize row/column conflicts
-3. Using simulated annealing to escape local minima
+Backtracking uses constraint propagation + recursive search. It's
+deterministic and guaranteed to find a solution if one exists.
+
+Simulated annealing is a probabilistic approach kept as an interesting
+alternative for portfolio demonstration.
 """
 
 import asyncio
 import math
 import random
-from typing import List, Tuple
+import time
+from typing import List, Literal, Tuple
 
 import numpy as np
 
-from app.config import get_settings
+
+# ── Backtracking Solver (Primary) ───────────────────────────────────
+
+
+def backtracking(
+    puzzle: List[List[int]],
+) -> Tuple[List[List[int]], int, bool]:
+    """Solve Sudoku using constraint propagation + backtracking.
+
+    Args:
+        puzzle: 9x9 grid with 0 for empty cells.
+
+    Returns:
+        (solution_grid, nodes_explored, success)
+    """
+    grid = [row[:] for row in puzzle]
+    nodes = [0]
+
+    # Precompute candidates for each empty cell
+    def candidates(r: int, c: int) -> set:
+        used = set(grid[r])  # row
+        used |= {grid[i][c] for i in range(9)}  # col
+        br, bc = 3 * (r // 3), 3 * (c // 3)
+        for i in range(br, br + 3):
+            for j in range(bc, bc + 3):
+                used.add(grid[i][j])
+        return set(range(1, 10)) - used
+
+    def solve() -> bool:
+        # Find empty cell with fewest candidates (MRV heuristic)
+        best, best_cands = None, None
+        for i in range(9):
+            for j in range(9):
+                if grid[i][j] == 0:
+                    cands = candidates(i, j)
+                    if not cands:
+                        return False  # dead end
+                    if best is None or len(cands) < len(best_cands):
+                        best = (i, j)
+                        best_cands = cands
+                        if len(cands) == 1:
+                            break  # can't do better
+            else:
+                continue
+            break
+
+        if best is None:
+            return True  # all cells filled
+
+        r, c = best
+        for val in best_cands:
+            nodes[0] += 1
+            grid[r][c] = val
+            if solve():
+                return True
+            grid[r][c] = 0
+
+        return False
+
+    success = solve()
+    return grid, nodes[0], success
 
 
 def calculate_energy(grid: np.ndarray, fixed: np.ndarray) -> int:
@@ -164,22 +226,40 @@ def simulated_annealing(
     return best.tolist(), max_iterations, best_energy == 0
 
 
+# ── Unified Interface ────────────────────────────────────────────────
+
+
+def solve(
+    puzzle: List[List[int]],
+    method: Literal["backtracking", "simulated_annealing"] = "backtracking",
+) -> Tuple[List[List[int]], int, bool, float]:
+    """Solve a Sudoku puzzle.
+
+    Args:
+        puzzle: 9x9 grid with 0 for empty cells.
+        method: "backtracking" (default, deterministic) or
+                "simulated_annealing" (probabilistic).
+
+    Returns:
+        (solution, iterations, success, elapsed_ms)
+    """
+    t0 = time.time()
+
+    if method == "backtracking":
+        solution, iters, success = backtracking(puzzle)
+    elif method == "simulated_annealing":
+        solution, iters, success = simulated_annealing(puzzle)
+    else:
+        raise ValueError(f"Unknown solver method: {method}")
+
+    elapsed_ms = (time.time() - t0) * 1000
+    return solution, iters, success, elapsed_ms
+
+
 async def solve_sudoku_async(
     puzzle: List[List[int]],
-) -> Tuple[List[List[int]], int, bool]:
-    """
-    Async wrapper for simulated annealing solver.
-
-    Uses settings from configuration.
-    """
-    settings = get_settings()
+    method: Literal["backtracking", "simulated_annealing"] = "backtracking",
+) -> Tuple[List[List[int]], int, bool, float]:
+    """Async wrapper for solve()."""
     loop = asyncio.get_event_loop()
-
-    return await loop.run_in_executor(
-        None,
-        simulated_annealing,
-        puzzle,
-        settings.initial_temp,
-        settings.cooling_rate,
-        settings.max_iterations,
-    )
+    return await loop.run_in_executor(None, solve, puzzle, method)

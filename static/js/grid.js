@@ -78,6 +78,8 @@ const Grid = {
         if (!container) return;
 
         const cells = container.querySelectorAll('.sudoku-cell');
+        const confidenceMap = options.confidenceMap || null;
+        const confidenceThreshold = 0.85;
 
         values.flat().forEach((val, idx) => {
             const cell = cells[idx];
@@ -88,6 +90,17 @@ const Grid = {
 
             if (val !== 0 && options.markFixed) {
                 cell.classList.add('sudoku-cell--fixed');
+            }
+
+            // Mark low-confidence cells with orange dot
+            if (confidenceMap && val !== 0) {
+                const row = Math.floor(idx / 9);
+                const col = idx % 9;
+                const conf = confidenceMap[row][col];
+                if (conf < confidenceThreshold) {
+                    cell.classList.add('sudoku-cell--low-confidence');
+                    cell.title = `Confidence: ${Math.round(conf * 100)}%`;
+                }
             }
         });
     },

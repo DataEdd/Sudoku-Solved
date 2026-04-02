@@ -1,0 +1,1801 @@
+{
+  "summary": {
+    "total_images": 20,
+    "methods": {
+      "contour": {
+        "detection_rate": 1.0,
+        "detections": 20,
+        "total": 20,
+        "avg_timing_ms": 16.788981246645562,
+        "median_timing_ms": 1.974084007088095,
+        "avg_confidence": 0.8062169444444445,
+        "avg_warp_deviation_px": 46.23103985433403,
+        "max_warp_deviation_px": 818.0516090520381
+      },
+      "hybrid": {
+        "detection_rate": 0.95,
+        "detections": 19,
+        "total": 20,
+        "avg_timing_ms": 2.6364749966887757,
+        "median_timing_ms": 2.3882079985924065,
+        "avg_confidence": 0.851162865497076,
+        "avg_warp_deviation_px": 5.377455266176628,
+        "max_warp_deviation_px": 30.161279537839327
+      },
+      "sudoku_detector": {
+        "detection_rate": 1.0,
+        "detections": 20,
+        "total": 20,
+        "avg_timing_ms": 4.246708352002315,
+        "median_timing_ms": 3.6653749994002283,
+        "avg_confidence": 0.8517703390953381,
+        "avg_warp_deviation_px": 75.94613658077316,
+        "max_warp_deviation_px": 1397.1875297788336
+      }
+    },
+    "by_category": {
+      "unknown": {
+        "contour": {
+          "detection_rate": 1.0,
+          "detections": 20,
+          "total": 20
+        },
+        "hybrid": {
+          "detection_rate": 0.95,
+          "detections": 19,
+          "total": 20
+        },
+        "sudoku_detector": {
+          "detection_rate": 1.0,
+          "detections": 20,
+          "total": 20
+        }
+      }
+    }
+  },
+  "results": [
+    {
+      "image_path": "Examples/aug/_115_6770007.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              56.0,
+              65.0
+            ],
+            [
+              515.0,
+              92.0
+            ],
+            [
+              478.0,
+              504.0
+            ],
+            [
+              6.0,
+              486.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 299.71,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_115_6770007_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.21
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              54.62639617919922,
+              65.79637908935547
+            ],
+            [
+              513.4161987304688,
+              91.60409545898438
+            ],
+            [
+              478.14373779296875,
+              503.4607849121094
+            ],
+            [
+              4.533375263214111,
+              482.8509826660156
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 2.2,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_115_6770007_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.75
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              54.62632369995117,
+              65.79670715332031
+            ],
+            [
+              519.0,
+              92.0
+            ],
+            [
+              478.14373779296875,
+              503.4607849121094
+            ],
+            [
+              4.533374786376953,
+              482.85101318359375
+            ]
+          ],
+          "confidence": 0.910135132312764,
+          "timing_ms": 5.64,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_115_6770007_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.03
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_118_4579703.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              33.0,
+              107.0
+            ],
+            [
+              400.0,
+              55.0
+            ],
+            [
+              464.0,
+              507.0
+            ],
+            [
+              87.0,
+              573.0
+            ]
+          ],
+          "confidence": 0.9679388888888889,
+          "timing_ms": 1.21,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_118_4579703_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.07
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              32.489295959472656,
+              107.09424591064453
+            ],
+            [
+              400.36993408203125,
+              56.31718063354492
+            ],
+            [
+              464.83154296875,
+              506.6494140625
+            ],
+            [
+              85.33610534667969,
+              572.143798828125
+            ]
+          ],
+          "confidence": 0.9657555555555556,
+          "timing_ms": 2.09,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_118_4579703_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.47
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              32.48925018310547,
+              107.0943374633789
+            ],
+            [
+              400.3699951171875,
+              56.31731033325195
+            ],
+            [
+              464.83154296875,
+              506.6495056152344
+            ],
+            [
+              85.3362808227539,
+              572.1441650390625
+            ]
+          ],
+          "confidence": 0.8675524212712399,
+          "timing_ms": 3.37,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_118_4579703_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.47
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_155_1229427.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              41.0,
+              41.0
+            ],
+            [
+              460.0,
+              18.0
+            ],
+            [
+              500.0,
+              547.0
+            ],
+            [
+              76.0,
+              576.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.02,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_155_1229427_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.18
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              40.49606704711914,
+              41.68933868408203
+            ],
+            [
+              460.66864013671875,
+              18.480724334716797
+            ],
+            [
+              500.1794738769531,
+              547.193603515625
+            ],
+            [
+              75.4830093383789,
+              575.9790649414062
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.64,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_155_1229427_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.41
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              35.0,
+              40.0
+            ],
+            [
+              460.66839599609375,
+              18.480581283569336
+            ],
+            [
+              500.1794128417969,
+              547.1936645507812
+            ],
+            [
+              75.483154296875,
+              575.9791870117188
+            ]
+          ],
+          "confidence": 0.9268325740358305,
+          "timing_ms": 2.68,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_155_1229427_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.24
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_16_5502196.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              192.0,
+              32.0
+            ],
+            [
+              406.0,
+              71.0
+            ],
+            [
+              371.0,
+              376.0
+            ],
+            [
+              142.0,
+              340.0
+            ]
+          ],
+          "confidence": 0.38601944444444447,
+          "timing_ms": 2.17,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_16_5502196_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 6.87
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              192.15223693847656,
+              32.49892807006836
+            ],
+            [
+              404.9220886230469,
+              71.47154998779297
+            ],
+            [
+              370.7187194824219,
+              375.2929992675781
+            ],
+            [
+              142.07469177246094,
+              339.09454345703125
+            ]
+          ],
+          "confidence": 0.3844472222222222,
+          "timing_ms": 2.85,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_16_5502196_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 7.27
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              192.15228271484375,
+              32.498939514160156
+            ],
+            [
+              404.9220886230469,
+              71.47154998779297
+            ],
+            [
+              370.7187194824219,
+              375.2929992675781
+            ],
+            [
+              133.0,
+              341.0
+            ]
+          ],
+          "confidence": 0.7681894930959532,
+          "timing_ms": 4.49,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_16_5502196_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 10.73
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_176_6705823.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              40.0,
+              78.0
+            ],
+            [
+              493.0,
+              56.0
+            ],
+            [
+              517.0,
+              519.0
+            ],
+            [
+              76.0,
+              544.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.13,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_176_6705823_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.37
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              37.783573150634766,
+              80.58250427246094
+            ],
+            [
+              492.5353698730469,
+              55.743446350097656
+            ],
+            [
+              517.86083984375,
+              519.7215576171875
+            ],
+            [
+              75.32711791992188,
+              542.997314453125
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.7,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_176_6705823_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.4
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              37.78352355957031,
+              80.58260345458984
+            ],
+            [
+              492.5354919433594,
+              55.7434196472168
+            ],
+            [
+              517.8599243164062,
+              519.7227172851562
+            ],
+            [
+              75.32711791992188,
+              542.997314453125
+            ]
+          ],
+          "confidence": 0.9569803016695323,
+          "timing_ms": 2.65,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_176_6705823_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.4
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_191_5029688.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              53.0,
+              191.0
+            ],
+            [
+              519.0,
+              207.0
+            ],
+            [
+              515.0,
+              554.0
+            ],
+            [
+              44.0,
+              521.0
+            ]
+          ],
+          "confidence": 0.881925,
+          "timing_ms": 2.13,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_191_5029688_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.76
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              54.712711334228516,
+              190.04261779785156
+            ],
+            [
+              518.3916625976562,
+              206.12623596191406
+            ],
+            [
+              514.3904418945312,
+              553.9828491210938
+            ],
+            [
+              45.317378997802734,
+              521.453125
+            ]
+          ],
+          "confidence": 0.8922888888888889,
+          "timing_ms": 2.39,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_191_5029688_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.95
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              328.5638427734375,
+              0.6591923832893372
+            ],
+            [
+              582.0,
+              0.0
+            ],
+            [
+              599.0,
+              112.0
+            ],
+            [
+              325.0603332519531,
+              98.1970443725586
+            ]
+          ],
+          "confidence": 0.3090721817729438,
+          "timing_ms": 3.55,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_191_5029688_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1397.19
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_195_8132158.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              231.0,
+              2.0
+            ],
+            [
+              586.0,
+              136.0
+            ],
+            [
+              371.0,
+              512.0
+            ],
+            [
+              4.0,
+              383.0
+            ]
+          ],
+          "confidence": 0.9205555555555556,
+          "timing_ms": 1.97,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_195_8132158_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.73
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              230.61505126953125,
+              3.000775098800659
+            ],
+            [
+              585.911865234375,
+              136.58934020996094
+            ],
+            [
+              372.2340087890625,
+              509.46844482421875
+            ],
+            [
+              3.1571152210235596,
+              382.28021240234375
+            ]
+          ],
+          "confidence": 0.9310833333333334,
+          "timing_ms": 2.52,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_195_8132158_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.68
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              230.61505126953125,
+              3.0007519721984863
+            ],
+            [
+              585.911865234375,
+              136.58934020996094
+            ],
+            [
+              372.23382568359375,
+              509.4684753417969
+            ],
+            [
+              3.157592535018921,
+              382.28045654296875
+            ]
+          ],
+          "confidence": 0.9020399032485392,
+          "timing_ms": 3.69,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_195_8132158_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.68
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_1_5057995.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              179.0,
+              460.0
+            ],
+            [
+              311.0,
+              554.0
+            ],
+            [
+              309.0,
+              599.0
+            ],
+            [
+              309.0,
+              599.0
+            ]
+          ],
+          "confidence": 0.0,
+          "timing_ms": 3.07,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_1_5057995_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 818.05
+        },
+        "hybrid": {
+          "detected": false,
+          "corners": null,
+          "confidence": 0.0,
+          "timing_ms": 6.25,
+          "error": null,
+          "debug_image_path": null,
+          "extracted_grid": null,
+          "center_corner_deviation": null
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              281.7894592285156,
+              190.03611755371094
+            ],
+            [
+              478.72064208984375,
+              293.11749267578125
+            ],
+            [
+              374.0,
+              599.0
+            ],
+            [
+              162.16224670410156,
+              414.6748352050781
+            ]
+          ],
+          "confidence": 0.8168172967287092,
+          "timing_ms": 4.59,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_1_5057995_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 16.11
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_231_9736472.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              115.0,
+              37.0
+            ],
+            [
+              527.0,
+              29.0
+            ],
+            [
+              547.0,
+              564.0
+            ],
+            [
+              132.0,
+              579.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.91,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_231_9736472_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.19
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              114.87443542480469,
+              36.172119140625
+            ],
+            [
+              527.2978515625,
+              29.30660057067871
+            ],
+            [
+              546.3281860351562,
+              563.4547729492188
+            ],
+            [
+              131.02928161621094,
+              577.8919067382812
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 2.27,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_231_9736472_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.64
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              114.87443542480469,
+              36.172119140625
+            ],
+            [
+              527.2977905273438,
+              29.307544708251953
+            ],
+            [
+              546.328369140625,
+              563.4546508789062
+            ],
+            [
+              131.02928161621094,
+              577.8919067382812
+            ]
+          ],
+          "confidence": 0.9266950812625026,
+          "timing_ms": 3.5,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_231_9736472_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.64
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_271_937605.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              70.0,
+              165.0
+            ],
+            [
+              546.0,
+              127.0
+            ],
+            [
+              559.0,
+              516.0
+            ],
+            [
+              98.0,
+              594.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.99,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_271_937605_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 11.66
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              70.81065368652344,
+              165.17176818847656
+            ],
+            [
+              545.2697143554688,
+              127.28145599365234
+            ],
+            [
+              557.4110717773438,
+              516.5139770507812
+            ],
+            [
+              97.93672943115234,
+              593.5112915039062
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 2.32,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_271_937605_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 10.99
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              70.81065368652344,
+              165.17176818847656
+            ],
+            [
+              545.2698974609375,
+              127.2812728881836
+            ],
+            [
+              557.4110717773438,
+              516.5139770507812
+            ],
+            [
+              97.93672943115234,
+              593.5112915039062
+            ]
+          ],
+          "confidence": 0.8728818353744132,
+          "timing_ms": 3.5,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_271_937605_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 10.99
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_278_3243716.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              130.0,
+              126.0
+            ],
+            [
+              585.0,
+              143.0
+            ],
+            [
+              585.0,
+              467.0
+            ],
+            [
+              107.0,
+              450.0
+            ]
+          ],
+          "confidence": 0.8407861111111111,
+          "timing_ms": 2.09,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_278_3243716_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.32
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              132.57431030273438,
+              123.20126342773438
+            ],
+            [
+              585.0947875976562,
+              143.0593719482422
+            ],
+            [
+              583.5447998046875,
+              466.97259521484375
+            ],
+            [
+              108.005126953125,
+              450.29998779296875
+            ]
+          ],
+          "confidence": 0.8503166666666667,
+          "timing_ms": 2.49,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_278_3243716_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.16
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              132.57431030273438,
+              123.20126342773438
+            ],
+            [
+              585.0947875976562,
+              143.0593719482422
+            ],
+            [
+              583.5447998046875,
+              466.97259521484375
+            ],
+            [
+              108.00494384765625,
+              450.2995910644531
+            ]
+          ],
+          "confidence": 0.8777454272611631,
+          "timing_ms": 3.67,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_278_3243716_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.16
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_279_3740877.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              111.0,
+              39.0
+            ],
+            [
+              571.0,
+              98.0
+            ],
+            [
+              548.0,
+              437.0
+            ],
+            [
+              49.0,
+              370.0
+            ]
+          ],
+          "confidence": 0.9072777777777777,
+          "timing_ms": 2.31,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_279_3740877_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.02
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              112.91121673583984,
+              38.1292724609375
+            ],
+            [
+              570.3447875976562,
+              98.23017120361328
+            ],
+            [
+              547.5382080078125,
+              436.3074951171875
+            ],
+            [
+              49.23109817504883,
+              369.6843566894531
+            ]
+          ],
+          "confidence": 0.9178222222222222,
+          "timing_ms": 2.65,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_279_3740877_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.05
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              112.91121673583984,
+              38.1292724609375
+            ],
+            [
+              570.3447875976562,
+              98.23017120361328
+            ],
+            [
+              547.5382080078125,
+              436.3074951171875
+            ],
+            [
+              49.23109817504883,
+              369.6843566894531
+            ]
+          ],
+          "confidence": 0.8408311518474101,
+          "timing_ms": 3.71,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_279_3740877_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.05
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_282_9392481.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              54.0,
+              8.0
+            ],
+            [
+              330.0,
+              0.0
+            ],
+            [
+              337.0,
+              503.0
+            ],
+            [
+              49.0,
+              506.0
+            ]
+          ],
+          "confidence": 0.7841472222222222,
+          "timing_ms": 1.05,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_282_9392481_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.07
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              53.815547943115234,
+              9.781103134155273
+            ],
+            [
+              329.2351379394531,
+              2.7002007961273193
+            ],
+            [
+              336.7145690917969,
+              504.1700439453125
+            ],
+            [
+              48.259159088134766,
+              504.9610900878906
+            ]
+          ],
+          "confidence": 0.7907527777777777,
+          "timing_ms": 1.84,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_282_9392481_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.73
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              53.815555572509766,
+              9.781116485595703
+            ],
+            [
+              329.2351379394531,
+              2.7002007961273193
+            ],
+            [
+              336.7145690917969,
+              504.1700439453125
+            ],
+            [
+              48.259159088134766,
+              504.9610290527344
+            ]
+          ],
+          "confidence": 0.7248586221998266,
+          "timing_ms": 3.57,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_282_9392481_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.73
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_298_9719312.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              98.0,
+              77.0
+            ],
+            [
+              397.0,
+              8.0
+            ],
+            [
+              518.0,
+              443.0
+            ],
+            [
+              169.0,
+              547.0
+            ]
+          ],
+          "confidence": 0.8606333333333334,
+          "timing_ms": 1.44,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_298_9719312_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 31.47
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              96.64495086669922,
+              78.86837768554688
+            ],
+            [
+              396.5223388671875,
+              8.867643356323242
+            ],
+            [
+              517.1377563476562,
+              443.2108459472656
+            ],
+            [
+              169.27914428710938,
+              545.996337890625
+            ]
+          ],
+          "confidence": 0.8638333333333333,
+          "timing_ms": 2.96,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_298_9719312_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 30.16
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              96.64495086669922,
+              78.86837768554688
+            ],
+            [
+              396.5223388671875,
+              8.867643356323242
+            ],
+            [
+              517.1377563476562,
+              443.2108459472656
+            ],
+            [
+              169.2791748046875,
+              545.99658203125
+            ]
+          ],
+          "confidence": 0.9267495733800819,
+          "timing_ms": 3.94,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_298_9719312_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 30.16
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_3_7322096.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              128.0,
+              166.0
+            ],
+            [
+              444.0,
+              136.0
+            ],
+            [
+              532.0,
+              472.0
+            ],
+            [
+              158.0,
+              544.0
+            ]
+          ],
+          "confidence": 0.7009666666666666,
+          "timing_ms": 1.85,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_3_7322096_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.27
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              128.6256103515625,
+              166.67669677734375
+            ],
+            [
+              444.1627502441406,
+              137.13363647460938
+            ],
+            [
+              532.1944580078125,
+              472.0408020019531
+            ],
+            [
+              158.03477478027344,
+              543.441650390625
+            ]
+          ],
+          "confidence": 0.7041583333333333,
+          "timing_ms": 3.17,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_3_7322096_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.77
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              128.6256103515625,
+              166.67669677734375
+            ],
+            [
+              444.1629333496094,
+              137.133544921875
+            ],
+            [
+              532.1944580078125,
+              472.0408020019531
+            ],
+            [
+              158.03492736816406,
+              543.4415283203125
+            ]
+          ],
+          "confidence": 0.9206580886990432,
+          "timing_ms": 4.07,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_3_7322096_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.77
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_5_9337676.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              84.0,
+              171.0
+            ],
+            [
+              478.0,
+              109.0
+            ],
+            [
+              538.0,
+              264.0
+            ],
+            [
+              113.0,
+              333.0
+            ]
+          ],
+          "confidence": 0.37678055555555556,
+          "timing_ms": 2.72,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_5_9337676_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.09
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              85.17298889160156,
+              170.53305053710938
+            ],
+            [
+              476.690185546875,
+              109.47099304199219
+            ],
+            [
+              537.5690307617188,
+              267.16949462890625
+            ],
+            [
+              113.0,
+              333.0
+            ]
+          ],
+          "confidence": 0.3831555555555556,
+          "timing_ms": 3.28,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_5_9337676_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 4.53
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              85.17298889160156,
+              170.53305053710938
+            ],
+            [
+              476.690185546875,
+              109.47101593017578
+            ],
+            [
+              537.5690307617188,
+              267.16949462890625
+            ],
+            [
+              114.0,
+              338.0
+            ]
+          ],
+          "confidence": 0.8106938839985471,
+          "timing_ms": 4.52,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_5_9337676_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 8.36
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_73_5214880.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              49.0,
+              119.0
+            ],
+            [
+              579.0,
+              65.0
+            ],
+            [
+              583.0,
+              440.0
+            ],
+            [
+              88.0,
+              485.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.95,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_73_5214880_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.96
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              49.511348724365234,
+              119.66004180908203
+            ],
+            [
+              577.82763671875,
+              64.985107421875
+            ],
+            [
+              581.5565185546875,
+              440.0099792480469
+            ],
+            [
+              89.53425598144531,
+              484.248291015625
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 2.19,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_73_5214880_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.98
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              49.511348724365234,
+              119.66004180908203
+            ],
+            [
+              577.82763671875,
+              64.985107421875
+            ],
+            [
+              581.5565185546875,
+              440.0099792480469
+            ],
+            [
+              89.53455352783203,
+              484.24822998046875
+            ]
+          ],
+          "confidence": 0.9208157914171715,
+          "timing_ms": 3.16,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_73_5214880_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.98
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_75_4409717.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              34.0,
+              59.0
+            ],
+            [
+              571.0,
+              70.0
+            ],
+            [
+              582.0,
+              503.0
+            ],
+            [
+              59.0,
+              513.0
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 1.86,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_75_4409717_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.99
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              34.66367721557617,
+              58.776885986328125
+            ],
+            [
+              570.5755004882812,
+              70.52179718017578
+            ],
+            [
+              580.8350830078125,
+              502.8177185058594
+            ],
+            [
+              58.84927749633789,
+              512.3837890625
+            ]
+          ],
+          "confidence": 1.0,
+          "timing_ms": 2.23,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_75_4409717_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.23
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              34.663841247558594,
+              58.77707290649414
+            ],
+            [
+              570.5755004882812,
+              70.52183532714844
+            ],
+            [
+              580.8350830078125,
+              502.8177185058594
+            ],
+            [
+              58.84927749633789,
+              512.3837890625
+            ]
+          ],
+          "confidence": 0.9564668070446367,
+          "timing_ms": 3.1,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_75_4409717_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 3.23
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_84_2751511.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              89.0,
+              182.0
+            ],
+            [
+              531.0,
+              179.0
+            ],
+            [
+              550.0,
+              455.0
+            ],
+            [
+              89.0,
+              461.0
+            ]
+          ],
+          "confidence": 0.6963,
+          "timing_ms": 1.85,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_84_2751511_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.63
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              91.10511779785156,
+              182.26914978027344
+            ],
+            [
+              529.6436157226562,
+              179.76168823242188
+            ],
+            [
+              548.4518432617188,
+              454.4376525878906
+            ],
+            [
+              92.90689849853516,
+              461.49053955078125
+            ]
+          ],
+          "confidence": 0.6904416666666666,
+          "timing_ms": 2.05,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_84_2751511_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.11
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              91.10511779785156,
+              182.26914978027344
+            ],
+            [
+              529.6433715820312,
+              179.7617950439453
+            ],
+            [
+              548.451904296875,
+              454.4376525878906
+            ],
+            [
+              92.90655517578125,
+              461.49066162109375
+            ]
+          ],
+          "confidence": 0.9411865000380204,
+          "timing_ms": 3.15,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_84_2751511_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 5.11
+        }
+      }
+    },
+    {
+      "image_path": "Examples/aug/_85_2521899.jpeg",
+      "category": "unknown",
+      "consensus_grid": null,
+      "methods": {
+        "contour": {
+          "detected": true,
+          "corners": [
+            [
+              76.0,
+              64.0
+            ],
+            [
+              472.0,
+              124.0
+            ],
+            [
+              425.0,
+              477.0
+            ],
+            [
+              18.0,
+              413.0
+            ]
+          ],
+          "confidence": 0.8010083333333333,
+          "timing_ms": 2.32,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_85_2521899_contour.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 2.72
+        },
+        "hybrid": {
+          "detected": true,
+          "corners": [
+            [
+              76.59741973876953,
+              64.99925994873047
+            ],
+            [
+              471.45465087890625,
+              124.51807403564453
+            ],
+            [
+              424.945068359375,
+              475.8807067871094
+            ],
+            [
+              18.482206344604492,
+              411.542724609375
+            ]
+          ],
+          "confidence": 0.7980388888888889,
+          "timing_ms": 3.64,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_85_2521899_hybrid.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.9
+        },
+        "sudoku_detector": {
+          "detected": true,
+          "corners": [
+            [
+              76.59741973876953,
+              64.99925994873047
+            ],
+            [
+              471.4546203613281,
+              124.51803588867188
+            ],
+            [
+              424.945068359375,
+              475.8807067871094
+            ],
+            [
+              18.482206344604492,
+              411.542724609375
+            ]
+          ],
+          "confidence": 0.8582047152484337,
+          "timing_ms": 14.41,
+          "error": null,
+          "debug_image_path": "evaluation/debug_images/_85_2521899_sudoku_detector.jpg",
+          "extracted_grid": null,
+          "center_corner_deviation": 1.9
+        }
+      }
+    }
+  ]
+}
