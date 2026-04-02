@@ -29,6 +29,12 @@ async def home(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 
+@app.get("/debug", response_class=HTMLResponse)
+async def debug_page(request: Request):
+    """Serve the pipeline debug visualizer."""
+    return templates.TemplateResponse(request=request, name="debug.html")
+
+
 @app.get("/api/health")
 async def health():
     """Health check with model status."""

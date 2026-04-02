@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Debugger</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0a1a; color: #e0e0e0; padding: 20px; max-width: 1400px; margin: 0 auto; }
+h1 { color: #00d4ff; margin-bottom: 8px; }
+h1 small { color: #555; font-size: 14px; font-weight: normal; }
+h2 { margin: 30px 0 10px; color: #aaa; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #1a1a2e; padding-bottom: 6px; }
+h2 .step { color: #00d4ff; margin-right: 8px; }
+h2 .desc { color: #555; font-weight: normal; }
+
+/* Upload */
+.upload-bar { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+.upload-bar input[type=file] { display: none; }
+.btn { background: #1a1a2e; border: 1px solid #333; color: #00d4ff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn:hover { background: #252545; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.status { color: #888; font-size: 13px; }
+
+/* Params panel */
+.params { background: #0f0f24; border: 1px solid #1a1a2e; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+.params summary { cursor: pointer; color: #00d4ff; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.params-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px 24px; margin-top: 12px; }
+.param { display: flex; align-items: center; gap: 8px; }
+.param label { font-size: 12px; color: #aaa; min-width: 90px; }
+.param input[type=range] { flex: 1; accent-color: #00d4ff; }
+.param .val { font-size: 12px; color: #00d4ff; min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+.params .actions { margin-top: 12px; display: flex; gap: 8px; }
+
+/* Images */
+.images-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+.images-row img { max-height: 320px; border: 1px solid #222; border-radius: 4px; background: #111; }
+.img-label { font-size: 11px; color: #666; margin-top: 2px; }
+.img-wrap { display: flex; flex-direction: column; }
+
+/* Corner canvas */
+.corner-wrap { position: relative; display: inline-block; }
+.corner-wrap canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+.corner-hint { font-size: 11px; color: #f59e0b; margin-top: 4px; }
+
+/* Cell grid */
+.cell-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 2px; max-width: 810px; background: #333; border: 2px solid #555; padding: 2px; }
+.cell-grid .box-r { border-right: 2px solid #888; }
+.cell-grid .box-b { border-bottom: 2px solid #888; }
+.cell { background: #111; display: flex; flex-direction: column; align-items: center; padding: 2px; min-height: 70px; }
+.cell img { width: 100%; image-rendering: pixelated; border-radius: 2px; }
+.cell .pred { font-size: 11px; margin-top: 1px; font-weight: bold; }
+.cell .meta { font-size: 9px; color: #666; }
+.cell.hi .pred { color: #4ade80; }
+.cell.lo .pred { color: #fb923c; }
+.cell.suspect .pred { color: #f87171; }
+.cell.emp { opacity: 0.4; }
+.cell-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
+.cell-toggle button { background: #1a1a2e; border: 1px solid #333; color: #ccc; padding: 5px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.cell-toggle button.active { color: #00d4ff; border-color: #00d4ff; }
+
+/* Sudoku table */
+.sudoku-table { border-collapse: collapse; }
+.sudoku-table td { width: 38px; height: 38px; text-align: center; font-size: 17px; font-weight: bold; border: 1px solid #333; background: #111; }
+.sudoku-table .br { border-right: 2px solid #888; }
+.sudoku-table .bb { border-bottom: 2px solid #888; }
+.sudoku-table .bl { border-left: 2px solid #888; }
+.sudoku-table .bt { border-top: 2px solid #888; }
+.sudoku-table .orig { color: #00d4ff; }
+.sudoku-table .solved { color: #4ade80; }
+.sudoku-table .empty { color: #222; }
+.sudoku-table .loconf { background: #2a1a00; }
+.grids-row { display: flex; gap: 40px; flex-wrap: wrap; }
+.grid-label { font-size: 12px; color: #888; margin-bottom: 6px; }
+
+.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<h1>Pipeline Debugger <small>every step, every pixel</small></h1>
+
+<div class="upload-bar">
+  <label class="btn" for="file-input">Choose Image</label>
+  <input type="file" id="file-input" accept="image/*">
+  <span class="status" id="status">Upload an image to begin</span>
+</div>
+
+<!-- Parameter sliders -->
+<details class="params" open>
+  <summary>Parameters</summary>
+  <div class="params-grid">
+    <div class="param"><label>Blur kernel</label><input type="range" id="p-blur" min="1" max="21" step="2" value="5"><span class="val" id="v-blur">5</span></div>
+    <div class="param"><label>Block size</label><input type="range" id="p-block" min="3" max="51" step="2" value="11"><span class="val" id="v-block">11</span></div>
+    <div class="param"><label>Threshold C</label><input type="range" id="p-threshc" min="0" max="20" step="1" value="2"><span class="val" id="v-threshc">2</span></div>
+    <div class="param"><label>Epsilon</label><input type="range" id="p-eps" min="5" max="100" step="1" value="20"><span class="val" id="v-eps">0.020</span></div>
+    <div class="param"><label>Cell margin %</label><input type="range" id="p-margin" min="0" max="30" step="1" value="10"><span class="val" id="v-margin">10</span></div>
+    <div class="param"><label>Empty thresh</label><input type="range" id="p-empty" min="1" max="30" step="1" value="3"><span class="val" id="v-empty">0.03</span></div>
+    <div class="param"><label>Conf thresh</label><input type="range" id="p-conf" min="30" max="99" step="1" value="70"><span class="val" id="v-conf">0.70</span></div>
+  </div>
+  <div class="actions">
+    <button class="btn" onclick="resetParams()">Reset Defaults</button>
+    <button class="btn" id="btn-rerun" onclick="rerun()" disabled>Re-run Pipeline</button>
+  </div>
+</details>
+
+<div id="results" class="hidden">
+
+  <!-- Step 1 -->
+  <h2><span class="step">1</span>Original</h2>
+  <div class="images-row">
+    <div class="img-wrap"><img id="img-original"><div class="img-label">Uploaded image</div></div>
+  </div>
+
+  <!-- Step 2 -->
+  <h2><span class="step">2</span>Preprocessing <span class="desc">Grayscale → Blur → Adaptive Threshold</span></h2>
+  <div class="images-row">
+    <div class="img-wrap"><img id="img-gray"><div class="img-label">Grayscale</div></div>
+    <div class="img-wrap"><img id="img-blur"><div class="img-label">Blurred (k=<span id="lbl-blur">5</span>)</div></div>
+    <div class="img-wrap"><img id="img-binary"><div class="img-label">Binary (block=<span id="lbl-block">11</span>, C=<span id="lbl-c">2</span>)</div></div>
+  </div>
+
+  <!-- Step 3 -->
+  <h2><span class="step">3</span>Contour Detection <span class="desc">All contours → Winning quadrilateral</span></h2>
+  <div class="images-row">
+    <div class="img-wrap"><img id="img-contours"><div class="img-label">Top contours by area (green=#1)</div></div>
+    <div class="img-wrap">
+      <div class="corner-wrap" id="corner-wrap">
+        <img id="img-selected">
+        <canvas id="corner-canvas"></canvas>
+      </div>
+      <div class="img-label">Detected corners (<span id="corner-src">auto</span>) — <span class="corner-hint">drag corners to adjust</span></div>
+    </div>
+  </div>
+
+  <!-- Step 4 -->
+  <h2><span class="step">4</span>Perspective Warp</h2>
+  <div class="images-row">
+    <div class="img-wrap"><img id="img-warped"><div class="img-label">Warped grid</div></div>
+  </div>
+
+  <!-- Step 5 -->
+  <h2><span class="step">5</span>Cell OCR <span class="desc">Per-cell CNN prediction</span></h2>
+  <div class="cell-toggle">
+    <button class="active" onclick="setCellView('raw',this)">Raw Cells</button>
+    <button onclick="setCellView('processed',this)">CNN Input</button>
+  </div>
+  <div id="cell-grid" class="cell-grid"></div>
+
+  <!-- Step 6 -->
+  <h2><span class="step">6</span>Result</h2>
+  <div class="grids-row">
+    <div><div class="grid-label">Extracted (OCR)</div><table id="grid-ext" class="sudoku-table"></table></div>
+    <div><div class="grid-label">Solved</div><table id="grid-sol" class="sudoku-table"></table></div>
+  </div>
+</div>
+
+<script>
+let data = null;
+let imageFile = null;
+let cellView = 'raw';
+let manualCorners = null; // [[x,y],...] or null
+let dragIdx = -1;
+let canvasScale = 1;
+
+// ── Params ──
+const DEFAULTS = { blur: 5, block: 11, threshc: 2, eps: 20, margin: 10, empty: 3, conf: 70 };
+const sliders = {};
+let debounceTimer = null;
+
+['blur','block','threshc','eps','margin','empty','conf'].forEach(k => {
+  const input = document.getElementById('p-' + k);
+  const val = document.getElementById('v-' + k);
+  sliders[k] = { input, val };
+  input.addEventListener('input', () => {
+    updateValDisplay(k);
+    // Auto-rerun with debounce (waits 400ms after last slider move)
+    if (imageFile) {
+      clearTimeout(debounceTimer);
+      document.getElementById('status').textContent = 'Waiting...';
+      debounceTimer = setTimeout(() => rerun(), 400);
+    }
+  });
+});
+
+function updateValDisplay(k) {
+  const v = parseInt(sliders[k].input.value);
+  if (k === 'eps') sliders[k].val.textContent = (v / 1000).toFixed(3);
+  else if (k === 'empty') sliders[k].val.textContent = (v / 100).toFixed(2);
+  else if (k === 'conf') sliders[k].val.textContent = (v / 100).toFixed(2);
+  else sliders[k].val.textContent = v;
+}
+
+function getParams() {
+  return {
+    blur_k: sliders.blur.input.value,
+    block_size: sliders.block.input.value,
+    thresh_c: sliders.threshc.input.value,
+    epsilon: parseInt(sliders.eps.input.value) / 1000,
+    cell_margin: sliders.margin.input.value,
+    empty_thresh: parseInt(sliders.empty.input.value) / 100,
+    conf_thresh: parseInt(sliders.conf.input.value) / 100,
+  };
+}
+
+function resetParams() {
+  sliders.blur.input.value = DEFAULTS.blur;
+  sliders.block.input.value = DEFAULTS.block;
+  sliders.threshc.input.value = DEFAULTS.threshc;
+  sliders.eps.input.value = DEFAULTS.eps;
+  sliders.margin.input.value = DEFAULTS.margin;
+  sliders.empty.input.value = DEFAULTS.empty;
+  sliders.conf.input.value = DEFAULTS.conf;
+  Object.keys(sliders).forEach(updateValDisplay);
+  manualCorners = null;
+}
+Object.keys(sliders).forEach(updateValDisplay);
+
+// ── Upload ──
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  imageFile = e.target.files[0];
+  if (!imageFile) return;
+  manualCorners = null;
+  await runPipeline();
+});
+
+async function rerun() {
+  if (!imageFile) return;
+  await runPipeline();
+}
+
+async function runPipeline() {
+  const status = document.getElementById('status');
+  status.textContent = 'Processing...';
+  document.getElementById('btn-rerun').disabled = true;
+
+  const params = getParams();
+  const form = new FormData();
+  form.append('file', imageFile);
+  Object.entries(params).forEach(([k, v]) => form.append(k, v));
+  if (manualCorners) form.append('corners', JSON.stringify(manualCorners));
+
+  try {
+    const resp = await fetch('/api/debug', { method: 'POST', body: form });
+    data = await resp.json();
+    if (data.error && !data.grayscale_b64) {
+      status.textContent = 'Error: ' + data.error;
+      return;
+    }
+    render();
+    document.getElementById('results').classList.remove('hidden');
+    status.textContent = data.error ? 'Partial: ' + data.error : 'Done';
+  } catch (err) {
+    status.textContent = 'Error: ' + err.message;
+  }
+}
+
+// ── Render ──
+function render() {
+  // Step 1
+  setImg('img-original', data.original_b64);
+
+  // Step 2
+  setImg('img-gray', data.grayscale_b64);
+  setImg('img-blur', data.blurred_b64);
+  setImg('img-binary', data.binary_b64);
+  document.getElementById('lbl-blur').textContent = sliders.blur.input.value;
+  document.getElementById('lbl-block').textContent = sliders.block.input.value;
+  document.getElementById('lbl-c').textContent = sliders.threshc.input.value;
+
+  // Step 3
+  if (data.all_contours_b64) setImg('img-contours', data.all_contours_b64);
+  if (data.selected_contour_b64) {
+    setImg('img-selected', data.selected_contour_b64);
+    document.getElementById('corner-src').textContent = data.corner_source || 'auto';
+    setupCornerCanvas();
+  }
+
+  // Step 4
+  if (data.warped_b64) setImg('img-warped', data.warped_b64);
+
+  // Step 5
+  if (data.cells) renderCells();
+
+  // Step 6
+  if (data.grid) renderSudoku('grid-ext', data.grid, data.confidence_map, null);
+  if (data.solution && data.solve_success)
+    renderSudoku('grid-sol', data.solution, null, data.grid);
+  else
+    document.getElementById('grid-sol').innerHTML = '<tr><td style="padding:20px;color:#f87171">No valid solution</td></tr>';
+}
+
+function setImg(id, src) { if (src) document.getElementById(id).src = src; }
+
+// ── Cells ──
+function renderCells() {
+  const g = document.getElementById('cell-grid');
+  g.innerHTML = '';
+  data.cells.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'cell';
+    if ((c.col + 1) % 3 === 0 && c.col < 8) d.classList.add('box-r');
+    if ((c.row + 1) % 3 === 0 && c.row < 8) d.classList.add('box-b');
+    if (c.digit === 0 && c.white_ratio > 0.15 && !c.is_empty) d.classList.add('suspect');
+    else if (c.digit === 0) d.classList.add('emp');
+    else if (c.confidence >= 0.9) d.classList.add('hi');
+    else d.classList.add('lo');
+    const src = cellView === 'raw' ? c.raw_b64 : c.processed_b64;
+    const dig = c.digit === 0 ? '-' : c.digit;
+    d.innerHTML = `<img src="${src}"><div class="pred">${dig} ${(c.confidence*100).toFixed(0)}%</div><div class="meta">wr:${(c.white_ratio*100).toFixed(0)}%</div>`;
+    g.appendChild(d);
+  });
+}
+
+function setCellView(v, btn) {
+  cellView = v;
+  document.querySelectorAll('.cell-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCells();
+}
+
+// ── Sudoku table ──
+function renderSudoku(id, grid, confMap, origGrid) {
+  const t = document.getElementById(id);
+  t.innerHTML = '';
+  for (let i = 0; i < 9; i++) {
+    const tr = document.createElement('tr');
+    for (let j = 0; j < 9; j++) {
+      const td = document.createElement('td');
+      const v = grid[i][j];
+      if (j % 3 === 0) td.classList.add('bl');
+      if ((j+1) % 3 === 0) td.classList.add('br');
+      if (i % 3 === 0) td.classList.add('bt');
+      if ((i+1) % 3 === 0) td.classList.add('bb');
+      if (origGrid) {
+        td.classList.add(origGrid[i][j] !== 0 ? 'orig' : (v !== 0 ? 'solved' : 'empty'));
+      } else {
+        td.classList.add(v !== 0 ? 'orig' : 'empty');
+        if (confMap && v !== 0 && confMap[i][j] < 0.85) td.classList.add('loconf');
+      }
+      td.textContent = v || '-';
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+}
+
+// ── Corner Dragging ──
+function setupCornerCanvas() {
+  const img = document.getElementById('img-selected');
+  const canvas = document.getElementById('corner-canvas');
+
+  // Wait for image to load to get display dimensions
+  img.onload = () => {
+    const rect = img.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    canvasScale = data.image_w / rect.width;
+    drawCorners();
+  };
+  // If already loaded
+  if (img.complete && img.naturalWidth > 0) img.onload();
+}
+
+function drawCorners() {
+  const canvas = document.getElementById('corner-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!data.corners) return;
+
+  const pts = data.corners;
+  const colors = ['#ff0000', '#ff8800', '#ffff00', '#0088ff'];
+  const labels = ['TL', 'TR', 'BR', 'BL'];
+
+  // Draw lines
+  ctx.beginPath();
+  ctx.strokeStyle = '#00ff00';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = pts[i];
+    const dx = x / canvasScale, dy = y / canvasScale;
+    if (i === 0) ctx.moveTo(dx, dy); else ctx.lineTo(dx, dy);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  // Draw handles
+  pts.forEach(([x, y], i) => {
+    const dx = x / canvasScale, dy = y / canvasScale;
+    ctx.beginPath();
+    ctx.arc(dx, dy, 10, 0, Math.PI * 2);
+    ctx.fillStyle = colors[i];
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(labels[i], dx + 14, dy + 4);
+  });
+}
+
+// Drag events
+const canvas = document.getElementById('corner-canvas');
+canvas.addEventListener('mousedown', (e) => {
+  if (!data.corners) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+  // Find closest corner
+  let best = -1, bestDist = 25; // 25px threshold
+  data.corners.forEach(([x, y], i) => {
+    const dx = x / canvasScale - mx, dy = y / canvasScale - my;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d < bestDist) { best = i; bestDist = d; }
+  });
+  dragIdx = best;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (dragIdx < 0) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  data.corners[dragIdx] = [mx * canvasScale, my * canvasScale];
+  drawCorners();
+});
+
+canvas.addEventListener('mouseup', () => {
+  if (dragIdx < 0) return;
+  dragIdx = -1;
+  // Set manual corners and re-run from warp step
+  manualCorners = data.corners;
+  runPipeline();
+});
+
+canvas.addEventListener('mouseleave', () => { dragIdx = -1; });
+</script>
+</body>
+</html>

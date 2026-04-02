@@ -1,12 +1,13 @@
 fastapi
 uvicorn[standard]
 opencv-python-headless
-pytesseract
 numpy
 python-multipart
 jinja2
 pydantic-settings
-matplotlib
-pytest
+onnxruntime
 torch
 torchvision
+pytesseract
+matplotlib
+pytest

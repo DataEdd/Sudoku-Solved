@@ -24,19 +24,85 @@ def preprocess_image(image: np.ndarray) -> np.ndarray:
     return thresh
 
 
-def find_grid_contour(thresh: np.ndarray) -> Optional[np.ndarray]:
-    """Find the largest quadrilateral contour (the Sudoku grid)."""
+def score_quad(
+    quad: np.ndarray,
+    contour_area: float,
+    max_contour_area: float,
+    img_center: np.ndarray,
+    max_dist: float,
+) -> float:
+    """Score a quadrilateral candidate for being a Sudoku grid.
+
+    score = (area_norm * 0.4) + (squareness * 0.3) + (centeredness * 0.3)
+
+    area_norm: contour_area / max_contour_area — favors larger quads without dominating
+    squareness: min(w,h) / max(w,h) from bounding rect — Sudoku grids are ~square
+    centeredness: 1 - (dist_from_center / max_dist) — grids tend to be near center
+    """
+    # Area normalized to largest candidate
+    area_norm = contour_area / max_contour_area if max_contour_area > 0 else 0.0
+
+    # Squareness from bounding rect
+    x, y, w, h = cv2.boundingRect(quad.reshape(-1, 1, 2).astype(np.int32))
+    squareness = min(w, h) / max(w, h) if max(w, h) > 0 else 0.0
+
+    # Centeredness
+    centroid = np.mean(quad.reshape(-1, 2), axis=0)
+    dist = np.linalg.norm(centroid - img_center)
+    centeredness = 1.0 - (dist / max_dist) if max_dist > 0 else 1.0
+
+    return (area_norm * 0.4) + (squareness * 0.3) + (centeredness * 0.3)
+
+
+def find_grid_contour(
+    thresh: np.ndarray,
+    epsilon: float = 0.02,
+) -> Optional[np.ndarray]:
+    """Find the best quadrilateral contour (the Sudoku grid).
+
+    Scores all convex quad candidates by area, squareness, and centeredness.
+    """
+    h, w = thresh.shape[:2]
+    image_area = h * w
+    img_center = np.array([w / 2.0, h / 2.0])
+    max_dist = np.sqrt((w / 2.0) ** 2 + (h / 2.0) ** 2)
+
     contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
 
-    contours = sorted(contours, key=cv2.contourArea, reverse=True)
+    # Collect all valid quad candidates
+    candidates = []
     for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < 0.01 * image_area or area > 0.99 * image_area:
+            continue
+
         peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) == 4:
-            return approx
-    return None
+        approx = cv2.approxPolyDP(contour, epsilon * peri, True)
+        if len(approx) != 4:
+            continue
+
+        if not cv2.isContourConvex(approx):
+            continue
+
+        candidates.append((approx, area))
+
+    if not candidates:
+        return None
+
+    max_area = max(c[1] for c in candidates)
+
+    best_contour = None
+    best_score = -1.0
+    for approx, area in candidates:
+        quad = approx.reshape(4, 2).astype(np.float32)
+        s = score_quad(quad, area, max_area, img_center, max_dist)
+        if s > best_score:
+            best_score = s
+            best_contour = approx
+
+    return best_contour
 
 
 def order_points(pts: np.ndarray) -> np.ndarray:
@@ -219,44 +285,18 @@ def _find_best_quad(
 ) -> Optional[Tuple[np.ndarray, float, float]]:
     """Find the best quadrilateral from a binary image.
 
-    Returns (quad_4x2, area, centeredness) or None.
+    Uses the unified scoring: 0.4*area_norm + 0.3*squareness + 0.3*centeredness.
+    Returns (quad_4x2, area, score) or None.
     """
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
+    contour = find_grid_contour(thresh)
+    if contour is None:
         return None
 
-    candidates = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area < 0.01 * image_area or area > 0.95 * image_area:
-            continue
-
-        peri = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-        if len(approx) != 4:
-            continue
-
-        if not cv2.isContourConvex(approx):
-            continue
-
-        quad = approx.reshape(4, 2).astype(np.float32)
-        centroid = np.mean(quad, axis=0)
-        dist = np.linalg.norm(centroid - img_center)
-        centeredness = 1.0 - (dist / max_dist) if max_dist > 0 else 1.0
-        candidates.append((quad, area, centeredness))
-
-    if not candidates:
-        return None
-
-    # Sort by area descending, use centeredness as tiebreaker
-    candidates.sort(key=lambda c: c[1], reverse=True)
-    best = candidates[0]
-    for cand in candidates[1:]:
-        if cand[1] >= 0.8 * best[1] and cand[2] > best[2]:
-            best = cand
-            break
-
-    return best
+    quad = contour.reshape(4, 2).astype(np.float32)
+    area = cv2.contourArea(contour)
+    # Score with self as max (this path is called per-threshold, so max_area=area)
+    s = score_quad(quad, area, area, img_center, max_dist)
+    return (quad, area, s)
 
 
 def detect_grid(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
