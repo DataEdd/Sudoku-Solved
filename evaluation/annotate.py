@@ -17,6 +17,8 @@ Saves to evaluation/ground_truth.json.
 Usage:
     cd Sudoku-Solved/
     python -m evaluation.annotate
+    python -m evaluation.annotate --redo _0_1436352.jpeg _15_7101336.jpeg
+    python -m evaluation.annotate --remove _0_1436352.jpeg
 
 Controls:
     Left click  — place next point
@@ -27,6 +29,7 @@ Controls:
     Enter       — confirm all 16 points and proceed to grid entry
 """
 
+import argparse
 import json
 import os
 import time
@@ -252,8 +255,8 @@ def parse_cell(token):
         if len(parts) < 2:
             raise ValueError(f"Multi-digit cell needs 2+ values: {token}")
         for v in parts:
-            if not 1 <= v <= 9:
-                raise ValueError(f"Multi-digit values must be 1-9: {token}")
+            if not 0 <= v <= 9:
+                raise ValueError(f"Multi-digit values must be 0-9: {token}")
         unique = sorted(set(parts))
         if len(unique) < 2:
             raise ValueError(f"Multi-digit cell needs 2+ unique values: {token}")
@@ -284,8 +287,8 @@ def enter_grid(warped):
 
     print("\n  Type the 9x9 grid (0 for empty cells).")
     print("  Enter one row per line, values separated by spaces.")
-    print("  Use X/Y for ambiguous cells (e.g., 1/7 means either 1 or 7).")
-    print("  Example: 5 0 9 1/7 0 0 0 2 0")
+    print("  Use X/Y for ambiguous cells (e.g., 0/1/7 means empty, 1, or 7 are all acceptable).")
+    print("  Example: 5 0 9 0/1/7 0 0 0 2 0")
     print("  Type 'skip' to skip this image.\n")
 
     grid = []
@@ -338,7 +341,53 @@ def get_already_annotated(data):
     return {img["path"] for img in data["images"]}
 
 
+def upsert_annotation(data, entry):
+    """Insert or replace an annotation by image path."""
+    for i, img in enumerate(data["images"]):
+        if img["path"] == entry["path"]:
+            data["images"][i] = entry
+            return
+    data["images"].append(entry)
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Sudoku ground truth annotation tool")
+    parser.add_argument(
+        "--redo", nargs="+", metavar="FILENAME",
+        help="Re-annotate specific images by filename (overwrites previous annotation)",
+    )
+    parser.add_argument(
+        "--remove", nargs="+", metavar="FILENAME",
+        help="Remove images: deletes JSON entry and image file from ground truth folder",
+    )
+    args = parser.parse_args()
+
+    if args.remove:
+        data = load_annotations()
+        for filename in args.remove:
+            img_path = f"{IMAGE_DIR}/{filename}"
+            # Remove JSON entry
+            before = len(data["images"])
+            data["images"] = [e for e in data["images"] if e["path"] != img_path]
+            removed_entry = before > len(data["images"])
+            # Remove image file
+            removed_file = False
+            if os.path.exists(img_path):
+                os.remove(img_path)
+                removed_file = True
+            if removed_entry or removed_file:
+                parts = []
+                if removed_entry:
+                    parts.append("JSON entry")
+                if removed_file:
+                    parts.append("image file")
+                print(f"  Removed {' + '.join(parts)}: {filename}")
+            else:
+                print(f"  Not found: {filename}")
+        save_annotations(data)
+        print(f"\n  {len(data['images'])} annotations remain in {OUTPUT_PATH}")
+        return
+
     # Collect all images from Ground Example directory, sorted
     all_files = sorted([
         f for f in os.listdir(IMAGE_DIR)
@@ -348,14 +397,29 @@ def main():
 
     data = load_annotations()
     already_done = get_already_annotated(data)
-    remaining = [p for p in image_paths if p not in already_done]
-    done_count = len(image_paths) - len(remaining)
+
+    if args.redo:
+        # Only show the requested images, regardless of annotation status
+        redo_set = set(args.redo)
+        remaining = [f"{IMAGE_DIR}/{f}" for f in all_files if f in redo_set]
+        not_found = redo_set - {Path(p).name for p in remaining}
+        if not_found:
+            print(f"  WARNING: Images not found: {', '.join(sorted(not_found))}")
+        mode = "REDO"
+    else:
+        remaining = [p for p in image_paths if p not in already_done]
+        mode = "NEW"
+
+    done_count = len(image_paths) - len([p for p in image_paths if p not in already_done])
 
     print("=" * 65)
     print("  SUDOKU GROUND TRUTH ANNOTATION TOOL v2 (16-point)")
     print("=" * 65)
     print(f"\n  Source: {IMAGE_DIR}/")
-    print(f"  Images: {len(image_paths)} total, {done_count} done, {len(remaining)} remaining")
+    if args.redo:
+        print(f"  Mode: REDO — re-annotating {len(remaining)} image(s)")
+    else:
+        print(f"  Images: {len(image_paths)} total, {done_count} done, {len(remaining)} remaining")
     print(f"  Saving to: {OUTPUT_PATH}")
     print()
     print("  For each image:")
@@ -369,7 +433,8 @@ def main():
 
     for idx, img_path in enumerate(remaining):
         img_name = Path(img_path).name
-        print(f"\n[{done_count + idx + 1}/{len(image_paths)}] {img_name}")
+        label = f"[REDO {idx + 1}/{len(remaining)}]" if mode == "REDO" else f"[{done_count + idx + 1}/{len(image_paths)}]"
+        print(f"\n{label} {img_name}")
 
         image = cv2.imread(img_path)
         if image is None:
@@ -409,9 +474,9 @@ def main():
         for row in grid:
             print("    " + " ".join(format_cell(v) for v in row))
 
-        data["images"].append(entry)
+        upsert_annotation(data, entry)
         save_annotations(data)
-        print(f"  Saved. ({done_count + idx + 1}/{len(image_paths)} done)")
+        print(f"  Saved. (overwrote previous)" if img_path in already_done else f"  Saved.")
 
     print(f"\nAll done! {len(data['images'])} annotations saved to {OUTPUT_PATH}")
     cv2.destroyAllWindows()
