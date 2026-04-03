@@ -277,6 +277,333 @@ def extract_cells_piecewise(
     return cells
 
 
+# ---------------------------------------------------------------------------
+# Structure-aware scoring for detect_grid_v2
+# ---------------------------------------------------------------------------
+
+_WARP_SIZE = 200
+
+
+def score_grid_structure(
+    image: np.ndarray,
+    quad: np.ndarray,
+    size: int = _WARP_SIZE,
+) -> Tuple[float, int, int, float, float]:
+    """Score how well a quad's interior matches a 9x9 grid line pattern.
+
+    Warps the quad to a fixed-size square, extracts horizontal and vertical
+    lines via morphological filtering, then checks line count, spacing
+    regularity, and coverage.
+
+    All pixel measurements are relative to the warped image (size x size),
+    so they are independent of the original image resolution.
+
+    Returns:
+        (score, n_h_lines, n_v_lines, h_coverage, v_coverage)
+    """
+    src = order_points(quad.reshape(4, 1, 2))
+    dst = np.array(
+        [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]],
+        dtype=np.float32,
+    )
+    M = cv2.getPerspectiveTransform(src, dst)
+    gray = (
+        cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if len(image.shape) == 3
+        else image
+    )
+    warped = cv2.warpPerspective(gray, M, (size, size))
+
+    thresh = cv2.adaptiveThreshold(
+        warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 15, 2,
+    )
+
+    # Extract lines using morphological opening (keeps long structures only)
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (size // 4, 1))
+    h_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, size // 4))
+    v_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, v_kernel)
+
+    # Project to 1D profiles
+    h_proj = np.sum(h_lines, axis=1).astype(float) / (size * 255)
+    v_proj = np.sum(v_lines, axis=0).astype(float) / (size * 255)
+
+    expected_gap = size / 9  # ~22px for size=200
+
+    def _analyze(prof: np.ndarray) -> Tuple[float, int, float]:
+        if np.max(prof) == 0:
+            return 0.0, 0, 0.0
+        peak_thresh = np.max(prof) * 0.3
+        min_dist = size // 15
+        peaks = []
+        for i in range(1, len(prof) - 1):
+            if (
+                prof[i] > peak_thresh
+                and prof[i] >= prof[i - 1]
+                and prof[i] >= prof[i + 1]
+            ):
+                if not peaks or (i - peaks[-1]) >= min_dist:
+                    peaks.append(i)
+        n = len(peaks)
+        if n < 2:
+            return 0.0, n, 0.0
+        count_acc = max(0.0, 1.0 - abs(n - 10) / 10)
+        gaps = np.diff(peaks)
+        regularity = max(0.0, 1.0 - float(np.std(gaps)) / expected_gap)
+        coverage = (peaks[-1] - peaks[0]) / size
+        return count_acc * regularity * coverage, n, coverage
+
+    h_score, n_h, h_cov = _analyze(h_proj)
+    v_score, n_v, v_cov = _analyze(v_proj)
+    return (h_score + v_score) / 2, n_h, n_v, h_cov, v_cov
+
+
+def score_cell_count(
+    image: np.ndarray,
+    quad: np.ndarray,
+    size: int = _WARP_SIZE,
+) -> Tuple[float, int, float]:
+    """Score whether a quad's interior contains ~81 cell-sized regions.
+
+    Warps the quad, inverts the threshold (white cells on dark lines),
+    counts connected components of the expected cell size.
+
+    Returns:
+        (score, cell_count, median_cell_area)
+    """
+    src = order_points(quad.reshape(4, 1, 2))
+    dst = np.array(
+        [[0, 0], [size - 1, 0], [size - 1, size - 1], [0, size - 1]],
+        dtype=np.float32,
+    )
+    M = cv2.getPerspectiveTransform(src, dst)
+    gray = (
+        cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        if len(image.shape) == 3
+        else image
+    )
+    warped = cv2.warpPerspective(gray, M, (size, size))
+
+    thresh = cv2.adaptiveThreshold(
+        warped, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 15, 2,
+    )
+    cells_img = cv2.bitwise_not(thresh)
+
+    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(cells_img)
+
+    expected_area = (size / 9) ** 2  # ~494px² for size=200
+    min_a = expected_area * 0.2
+    max_a = expected_area * 3.0
+
+    cell_areas = []
+    for i in range(1, n_labels):  # skip background
+        a = stats[i, cv2.CC_STAT_AREA]
+        if min_a < a < max_a:
+            cell_areas.append(float(a))
+
+    count = len(cell_areas)
+    median_area = float(np.median(cell_areas)) if cell_areas else 0.0
+
+    closeness = max(0.0, 1.0 - abs(count - 81) / 81)
+    if len(cell_areas) > 5:
+        cv_val = float(np.std(cell_areas) / np.mean(cell_areas))
+        consistency = max(0.0, 1.0 - cv_val)
+    else:
+        consistency = 0.0
+
+    return closeness * consistency, count, median_area
+
+
+def _find_best_quad_structured(
+    image: np.ndarray,
+    thresh: np.ndarray,
+    image_area: int,
+    img_center: np.ndarray,
+    max_dist: float,
+) -> Optional[Tuple[np.ndarray, float, float]]:
+    """Find the best quad using RETR_TREE + structure-aware scoring.
+
+    Scoring: area*0.2 + squareness*0.2 + centeredness*0.1
+             + grid_structure*0.3 + cell_count*0.2
+    """
+    contours, _ = cv2.findContours(
+        thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE,
+    )
+    if not contours:
+        return None
+
+    candidates = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < 0.01 * image_area or area > 0.99 * image_area:
+            continue
+        peri = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        if len(approx) != 4:
+            continue
+        if not cv2.isContourConvex(approx):
+            continue
+        candidates.append((approx, area))
+
+    if not candidates:
+        return None
+
+    max_area = max(c[1] for c in candidates)
+
+    best_contour = None
+    best_score = -1.0
+    for approx, area in candidates:
+        quad = approx.reshape(4, 2).astype(np.float32)
+        area_norm = area / max_area if max_area > 0 else 0.0
+        x, y, w, h = cv2.boundingRect(approx)
+        squareness = min(w, h) / max(w, h) if max(w, h) > 0 else 0.0
+        centroid = np.mean(quad, axis=0)
+        dist = np.linalg.norm(centroid - img_center)
+        centeredness = 1.0 - (dist / max_dist) if max_dist > 0 else 1.0
+
+        struct_score = score_grid_structure(image, quad)[0]
+        cell_score = score_cell_count(image, quad)[0]
+
+        s = (
+            area_norm * 0.2
+            + squareness * 0.2
+            + centeredness * 0.1
+            + struct_score * 0.3
+            + cell_score * 0.2
+        )
+        if s > best_score:
+            best_score = s
+            best_contour = approx
+
+    if best_contour is None:
+        return None
+
+    quad = best_contour.reshape(4, 2).astype(np.float32)
+    area = cv2.contourArea(best_contour)
+    return (quad, area, best_score)
+
+
+def _preprocess(
+    gray: np.ndarray,
+    clahe_clip: float = 2.0,
+    block_size: int = 11,
+    thresh_c: int = 2,
+    morph_dilate: int = 0,
+    morph_erode: int = 0,
+) -> np.ndarray:
+    """Shared preprocessing: CLAHE -> blur -> threshold -> optional morph."""
+    clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, block_size, thresh_c,
+    )
+    if morph_dilate > 0:
+        thresh = cv2.dilate(
+            thresh, np.ones((morph_dilate, morph_dilate), np.uint8), iterations=1,
+        )
+    if morph_erode > 0:
+        thresh = cv2.erode(
+            thresh, np.ones((morph_erode, morph_erode), np.uint8), iterations=1,
+        )
+    return thresh
+
+
+def _find_quad_standard(
+    thresh: np.ndarray,
+    image_area: int,
+    img_center: np.ndarray,
+    max_dist: float,
+) -> Optional[Tuple[np.ndarray, float, float]]:
+    """Find best quad with RETR_EXTERNAL + standard scoring (0.4/0.3/0.3)."""
+    contour = find_grid_contour(thresh)
+    if contour is None:
+        return None
+    quad = contour.reshape(4, 2).astype(np.float32)
+    area = cv2.contourArea(contour)
+    s = score_quad(quad, area, area, img_center, max_dist)
+    return (quad, area, s)
+
+
+def _refine_corners(
+    gray: np.ndarray,
+    quad: np.ndarray,
+) -> np.ndarray:
+    """Order corners and apply sub-pixel refinement."""
+    corners = order_points(quad.reshape(4, 1, 2))
+    h, w = gray.shape[:2]
+    corners_sp = corners.reshape(-1, 1, 2).astype(np.float32)
+    corners_sp[:, :, 0] = np.clip(corners_sp[:, :, 0], 5, w - 6)
+    corners_sp[:, :, 1] = np.clip(corners_sp[:, :, 1], 5, h - 6)
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+    refined = cv2.cornerSubPix(
+        gray, corners_sp, winSize=(5, 5), zeroZone=(-1, -1), criteria=criteria,
+    )
+    return refined.reshape(4, 2).astype(np.float32)
+
+
+def detect_grid_v2(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
+    """Detect Sudoku grid using a 4-step deterministic fallback chain.
+
+    Step 1: RETR_TREE + structure-aware scoring (29/38 on GT benchmark).
+            Uses grid_structure and cell_count scoring to prefer quads
+            whose interiors look like a 9x9 grid.
+    Step 2: Morph dilate=3/erode=5 fallback — closes broken contours.
+    Step 3: Aggressive CLAHE (clip=6, C=7) — enhances faint grids.
+    Step 4: Morph dilate=3/erode=3 fallback — closes fragmented lines.
+
+    Each step is tried in order; the first detection is accepted.
+
+    Args:
+        image: Input BGR image.
+
+    Returns:
+        Tuple of (corners_4x2, confidence). corners is None if all steps fail.
+        Corners are ordered [TL, TR, BR, BL].
+    """
+    h, w = image.shape[:2]
+    image_area = h * w
+    img_center = np.array([w / 2.0, h / 2.0])
+    max_dist = np.sqrt((w / 2.0) ** 2 + (h / 2.0) ** 2)
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Step 1: TREE + structure scoring (primary)
+    thresh1 = _preprocess(gray)
+    result = _find_best_quad_structured(
+        image, thresh1, image_area, img_center, max_dist,
+    )
+
+    # Step 2: Morph dilate=3, erode=5
+    if result is None:
+        thresh2 = _preprocess(gray, morph_dilate=3, morph_erode=5)
+        result = _find_quad_standard(thresh2, image_area, img_center, max_dist)
+
+    # Step 3: Aggressive CLAHE (clip=6, C=7)
+    if result is None:
+        thresh3 = _preprocess(gray, clahe_clip=6.0, thresh_c=7)
+        result = _find_quad_standard(thresh3, image_area, img_center, max_dist)
+
+    # Step 4: Morph dilate=3, erode=3
+    if result is None:
+        thresh4 = _preprocess(gray, morph_dilate=3, morph_erode=3)
+        result = _find_quad_standard(thresh4, image_area, img_center, max_dist)
+
+    if result is None:
+        return None, 0.0
+
+    quad, area, _ = result
+    corners = _refine_corners(gray, quad)
+
+    area_ratio = area / image_area
+    confidence = min(1.0, area_ratio / 0.5) if area_ratio > 0.05 else 0.0
+
+    return corners, confidence
+
+
 def _find_best_quad(
     thresh: np.ndarray,
     image_area: int,

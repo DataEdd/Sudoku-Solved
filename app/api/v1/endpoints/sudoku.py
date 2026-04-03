@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.extraction import (
+    detect_grid_v2,
     extract_cells,
     find_grid_contour,
     order_points,
@@ -45,18 +46,17 @@ async def extract_grid(file: UploadFile = File(...)):
                 message="Invalid image file",
             )
 
-        # Detection
-        thresh = preprocess_image(image)
-        contour = find_grid_contour(thresh)
+        # Detection (4-step fallback chain)
+        corners, confidence = detect_grid_v2(image)
 
-        if contour is None:
+        if corners is None:
             return ExtractResponse(
                 success=False,
                 message="Could not detect Sudoku grid in image.",
             )
 
         # Cell extraction + OCR
-        warped = perspective_transform(image, contour)
+        warped = perspective_transform(image, corners.reshape(4, 1, 2).astype(np.int32))
         cells = extract_cells(warped)
         grid, confidence_map = recognize_cells(cells)
 
