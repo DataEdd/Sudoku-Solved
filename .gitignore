@@ -30,6 +30,12 @@ uploads/
 TODO
 Examples
 
-# Generated reports
-reports/*.html
+# Generated artifacts
+output/
+reports/
 tests/output/
+
+# Large data files
+data/mnist/
+*.ipynb_checkpoints/
+research/
