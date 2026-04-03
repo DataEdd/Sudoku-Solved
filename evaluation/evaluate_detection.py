@@ -33,7 +33,7 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.core.extraction import order_points, score_quad
+from app.core.extraction import order_points
 
 # Ground truth corner indices: outer corners from corners_16
 # Layout:  P0  P1  P2  P3     (top)
@@ -51,9 +51,17 @@ DEFAULTS = {
     "thresh_c": 2,
     "epsilon": 0.02,
     "min_area_ratio": 0.01,
+    "morph_dilate": 0,
+    "morph_erode": 0,
+    "area_weight": 0.4,
+    "squareness_weight": 0.3,
+    "center_weight": 0.3,
+    "squareness_min": 0.0,
+    "area_max_ratio": 0.99,
+    "contour_mode": "external",
 }
 
-# Default sweep ranges
+# Default sweep ranges (single-element lists for new params = no sweep by default)
 SWEEP_DEFAULTS = {
     "clahe_clip": [1.0, 2.0, 3.0, 4.0],
     "clahe_tile": [(4, 4), (8, 8), (16, 16)],
@@ -62,6 +70,14 @@ SWEEP_DEFAULTS = {
     "thresh_c": [1, 2, 3, 5, 7],
     "epsilon": [0.01, 0.015, 0.02, 0.03, 0.04],
     "min_area_ratio": [0.005, 0.01, 0.02, 0.05],
+    "morph_dilate": [0],
+    "morph_erode": [0],
+    "area_weight": [0.4],
+    "squareness_weight": [0.3],
+    "center_weight": [0.3],
+    "squareness_min": [0.0],
+    "area_max_ratio": [0.99],
+    "contour_mode": ["external"],
 }
 
 
@@ -97,6 +113,14 @@ def detect_with_params(
     thresh_c: int = 2,
     epsilon: float = 0.02,
     min_area_ratio: float = 0.01,
+    morph_dilate: int = 0,
+    morph_erode: int = 0,
+    area_weight: float = 0.4,
+    squareness_weight: float = 0.3,
+    center_weight: float = 0.3,
+    squareness_min: float = 0.0,
+    area_max_ratio: float = 0.99,
+    contour_mode: str = "external",
 ) -> Tuple[Optional[np.ndarray], float]:
     """Parameterized detection -- same logic as detect_grid() but with tunable params.
 
@@ -122,17 +146,27 @@ def detect_with_params(
         block_size, thresh_c,
     )
 
-    # Find contours and score quad candidates
-    contours, _ = cv2.findContours(
-        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
-    )
+    # Morphological operations (connect broken lines / remove noise)
+    if morph_dilate > 0:
+        thresh = cv2.dilate(
+            thresh, np.ones((morph_dilate, morph_dilate), np.uint8), iterations=1,
+        )
+    if morph_erode > 0:
+        thresh = cv2.erode(
+            thresh, np.ones((morph_erode, morph_erode), np.uint8), iterations=1,
+        )
+
+    # Find contours
+    cv_mode = cv2.RETR_TREE if contour_mode == "tree" else cv2.RETR_EXTERNAL
+    contours, _ = cv2.findContours(thresh, cv_mode, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None, 0.0
 
+    # Filter to quad candidates
     candidates = []
     for contour in contours:
         area = cv2.contourArea(contour)
-        if area < min_area_ratio * image_area or area > 0.99 * image_area:
+        if area < min_area_ratio * image_area or area > area_max_ratio * image_area:
             continue
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon * peri, True)
@@ -140,6 +174,12 @@ def detect_with_params(
             continue
         if not cv2.isContourConvex(approx):
             continue
+        # Squareness filter
+        if squareness_min > 0:
+            x, y, bw, bh = cv2.boundingRect(approx)
+            sq = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0
+            if sq < squareness_min:
+                continue
         candidates.append((approx, area))
 
     if not candidates:
@@ -147,11 +187,22 @@ def detect_with_params(
 
     max_area = max(c[1] for c in candidates)
 
+    # Score candidates (inline scoring with configurable weights)
     best_contour = None
     best_score = -1.0
     for approx, area in candidates:
         quad = approx.reshape(4, 2).astype(np.float32)
-        s = score_quad(quad, area, max_area, img_center, max_dist)
+        # Area normalized to largest candidate
+        area_norm = area / max_area if max_area > 0 else 0.0
+        # Squareness from bounding rect
+        x, y, bw, bh = cv2.boundingRect(approx)
+        squareness = min(bw, bh) / max(bw, bh) if max(bw, bh) > 0 else 0.0
+        # Centeredness
+        centroid = np.mean(quad, axis=0)
+        dist = np.linalg.norm(centroid - img_center)
+        centeredness = 1.0 - (dist / max_dist) if max_dist > 0 else 1.0
+        # Weighted score
+        s = (area_norm * area_weight) + (squareness * squareness_weight) + (centeredness * center_weight)
         if s > best_score:
             best_score = s
             best_contour = approx
@@ -173,8 +224,8 @@ def detect_with_params(
 
     # Confidence based on area ratio
     best_area = cv2.contourArea(best_contour)
-    area_ratio = best_area / image_area
-    confidence = min(1.0, area_ratio / 0.5) if area_ratio > 0.05 else 0.0
+    ar = best_area / image_area
+    confidence = min(1.0, ar / 0.5) if ar > 0.05 else 0.0
 
     return corners, confidence
 
@@ -351,6 +402,19 @@ def is_current_defaults(params: Dict[str, Any]) -> bool:
     return True
 
 
+def _has_non_default_param(sweep_results: List[Dict], key: str) -> bool:
+    """Check if any result has a non-default value for a parameter."""
+    default = DEFAULTS[key]
+    for r in sweep_results:
+        val = r["params"].get(key)
+        if isinstance(default, tuple):
+            if tuple(val) if isinstance(val, list) else val != default:
+                return True
+        elif val != default:
+            return True
+    return False
+
+
 def print_sweep_results(sweep_results: List[Dict[str, Any]]) -> None:
     """Print ranked sweep results table."""
     # Sort: most detections first, then lowest mean error
@@ -360,6 +424,22 @@ def print_sweep_results(sweep_results: List[Dict[str, Any]]) -> None:
         return (-s["detected"], err)
 
     sweep_results.sort(key=sort_key)
+
+    # Determine which extra columns to show (only when they vary)
+    extra_cols = []
+    extra_keys = [
+        ("morph_dilate", "dil", 3),
+        ("morph_erode", "ero", 3),
+        ("area_weight", "a_wt", 4),
+        ("squareness_weight", "s_wt", 4),
+        ("center_weight", "c_wt", 4),
+        ("squareness_min", "sq_m", 4),
+        ("area_max_ratio", "a_mx", 4),
+        ("contour_mode", "mode", 8),
+    ]
+    for key, label, width in extra_keys:
+        if _has_non_default_param(sweep_results, key):
+            extra_cols.append((key, label, width))
 
     print(f"\n{'=' * 120}")
     print(f"Parameter Sweep Results ({len(sweep_results)} combinations)")
@@ -371,6 +451,8 @@ def print_sweep_results(sweep_results: List[Dict[str, Any]]) -> None:
         f"{'clip':>5} | {'tile':>4} | {'blur':>4} | "
         f"{'block':>5} | {'thr_c':>5} | {'eps':>5} | {'min_a':>5}"
     )
+    for key, label, width in extra_cols:
+        hdr += f" | {label:>{width}}"
     print(hdr)
     print("-" * len(hdr))
 
@@ -387,13 +469,23 @@ def print_sweep_results(sweep_results: List[Dict[str, Any]]) -> None:
 
         tag = " (current)" if is_current_defaults(p) else ""
 
-        print(
+        line = (
             f"{rank:>4} | {s['detection_rate']:>9} | {mean_err:>8} | "
             f"{med_err:>7} | {mean_iou:>8} | "
             f"{p['clahe_clip']:>5.1f} | {tile_val:>4} | {p['blur_k']:>4} | "
             f"{p['block_size']:>5} | {p['thresh_c']:>5} | "
-            f"{p['epsilon']:>5.3f} | {p['min_area_ratio']:>5.3f}{tag}"
+            f"{p['epsilon']:>5.3f} | {p['min_area_ratio']:>5.3f}"
         )
+        for key, label, width in extra_cols:
+            val = p.get(key, DEFAULTS[key])
+            if isinstance(val, float):
+                line += f" | {val:>{width}.2f}"
+            elif isinstance(val, str):
+                line += f" | {val:>{width}}"
+            else:
+                line += f" | {val:>{width}}"
+        line += tag
+        print(line)
 
     print()
 
@@ -466,6 +558,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--thresh-c", type=int, nargs="+", default=None)
     parser.add_argument("--epsilon", type=float, nargs="+", default=None)
     parser.add_argument("--min-area-ratio", type=float, nargs="+", default=None)
+    parser.add_argument("--morph-dilate", type=int, nargs="+", default=None,
+                        help="Dilation kernel size (0 = skip)")
+    parser.add_argument("--morph-erode", type=int, nargs="+", default=None,
+                        help="Erosion kernel size (0 = skip)")
+    parser.add_argument("--area-weight", type=float, nargs="+", default=None)
+    parser.add_argument("--squareness-weight", type=float, nargs="+", default=None)
+    parser.add_argument("--center-weight", type=float, nargs="+", default=None)
+    parser.add_argument("--squareness-min", type=float, nargs="+", default=None,
+                        help="Hard squareness cutoff (0 = disabled)")
+    parser.add_argument("--area-max-ratio", type=float, nargs="+", default=None,
+                        help="Max area ratio filter")
+    parser.add_argument("--contour-mode", type=str, nargs="+", default=None,
+                        choices=["external", "tree"])
 
     parser.add_argument(
         "--output", "-o", type=str, default=None,
@@ -493,6 +598,14 @@ def main():
             "thresh_c": args.thresh_c or SWEEP_DEFAULTS["thresh_c"],
             "epsilon": args.epsilon or SWEEP_DEFAULTS["epsilon"],
             "min_area_ratio": args.min_area_ratio or SWEEP_DEFAULTS["min_area_ratio"],
+            "morph_dilate": args.morph_dilate or SWEEP_DEFAULTS["morph_dilate"],
+            "morph_erode": args.morph_erode or SWEEP_DEFAULTS["morph_erode"],
+            "area_weight": args.area_weight or SWEEP_DEFAULTS["area_weight"],
+            "squareness_weight": args.squareness_weight or SWEEP_DEFAULTS["squareness_weight"],
+            "center_weight": args.center_weight or SWEEP_DEFAULTS["center_weight"],
+            "squareness_min": args.squareness_min or SWEEP_DEFAULTS["squareness_min"],
+            "area_max_ratio": args.area_max_ratio or SWEEP_DEFAULTS["area_max_ratio"],
+            "contour_mode": args.contour_mode or SWEEP_DEFAULTS["contour_mode"],
         }
 
         results = run_sweep(images, sweep_params)
@@ -523,6 +636,14 @@ def main():
             "thresh_c": (args.thresh_c or [DEFAULTS["thresh_c"]])[0],
             "epsilon": (args.epsilon or [DEFAULTS["epsilon"]])[0],
             "min_area_ratio": (args.min_area_ratio or [DEFAULTS["min_area_ratio"]])[0],
+            "morph_dilate": (args.morph_dilate or [DEFAULTS["morph_dilate"]])[0],
+            "morph_erode": (args.morph_erode or [DEFAULTS["morph_erode"]])[0],
+            "area_weight": (args.area_weight or [DEFAULTS["area_weight"]])[0],
+            "squareness_weight": (args.squareness_weight or [DEFAULTS["squareness_weight"]])[0],
+            "center_weight": (args.center_weight or [DEFAULTS["center_weight"]])[0],
+            "squareness_min": (args.squareness_min or [DEFAULTS["squareness_min"]])[0],
+            "area_max_ratio": (args.area_max_ratio or [DEFAULTS["area_max_ratio"]])[0],
+            "contour_mode": (args.contour_mode or [DEFAULTS["contour_mode"]])[0],
         }
 
         run = evaluate_run(images, params)

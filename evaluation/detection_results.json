@@ -9,43 +9,51 @@
     "block_size": 11,
     "thresh_c": 2,
     "epsilon": 0.02,
-    "min_area_ratio": 0.01
+    "min_area_ratio": 0.01,
+    "morph_dilate": 3,
+    "morph_erode": 5,
+    "area_weight": 0.4,
+    "squareness_weight": 0.3,
+    "center_weight": 0.3,
+    "squareness_min": 0.0,
+    "area_max_ratio": 0.99,
+    "contour_mode": "tree"
   },
   "summary": {
-    "detection_rate": "27/38",
-    "detected": 27,
+    "detection_rate": "22/38",
+    "detected": 22,
     "total": 38,
-    "mean_error_px": 18.73,
-    "median_error_px": 1.52,
-    "max_error_px": 328.26,
-    "mean_iou": 0.9294
+    "mean_error_px": 105.48,
+    "median_error_px": 78.41,
+    "max_error_px": 286.42,
+    "mean_iou": 0.5311
   },
   "per_image": [
     {
       "path": "Examples/Ground Example/_0_1436352.jpeg",
       "detected": true,
       "corner_errors": [
-        21.5,
-        20.74,
-        21.31,
-        19.75
+        212.34,
+        216.63,
+        226.9,
+        207.27
       ],
-      "mean_error": 20.82,
-      "iou": 0.8783,
-      "confidence": 0.8336
+      "mean_error": 215.78,
+      "iou": 0.0359,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_10_970725.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        0.25,
-        2.85,
-        0.74,
-        0.51
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 1.09,
-      "iou": 0.9949,
-      "confidence": 0.8957
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_11_257486.jpeg",
@@ -77,43 +85,30 @@
       "path": "Examples/Ground Example/_13_4195024.jpeg",
       "detected": true,
       "corner_errors": [
-        0.39,
+        0.4,
         2.47,
         1.0,
         2.27
       ],
-      "mean_error": 1.53,
+      "mean_error": 1.54,
       "iou": 0.9905,
-      "confidence": 0.7767
+      "confidence": 0.7684
     },
     {
       "path": "Examples/Ground Example/_15_7101336.jpeg",
       "detected": true,
       "corner_errors": [
-        1.04,
-        1.6,
-        0.43,
-        1.94
+        305.52,
+        99.65,
+        108.43,
+        325.72
       ],
-      "mean_error": 1.25,
-      "iou": 0.9928,
-      "confidence": 0.7917
+      "mean_error": 209.83,
+      "iou": 0.1115,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_16_1564820.jpeg",
-      "detected": true,
-      "corner_errors": [
-        0.87,
-        0.83,
-        1.78,
-        1.4
-      ],
-      "mean_error": 1.22,
-      "iou": 0.9904,
-      "confidence": 0.4427
-    },
-    {
-      "path": "Examples/Ground Example/_17_3814183.jpeg",
       "detected": false,
       "corner_errors": [
         null,
@@ -126,6 +121,19 @@
       "confidence": 0.0
     },
     {
+      "path": "Examples/Ground Example/_17_3814183.jpeg",
+      "detected": true,
+      "corner_errors": [
+        306.44,
+        380.19,
+        269.6,
+        2.19
+      ],
+      "mean_error": 239.61,
+      "iou": 0.1384,
+      "confidence": 0.1322
+    },
+    {
       "path": "Examples/Ground Example/_18_2132308.jpeg",
       "detected": true,
       "corner_errors": [
@@ -136,20 +144,20 @@
       ],
       "mean_error": 1.16,
       "iou": 0.9927,
-      "confidence": 0.8728
+      "confidence": 0.864
     },
     {
       "path": "Examples/Ground Example/_19_2711222.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        0.95,
-        1.62,
-        1.45,
-        0.68
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 1.18,
-      "iou": 0.9905,
-      "confidence": 0.4255
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_1_2180648.jpeg",
@@ -179,16 +187,16 @@
     },
     {
       "path": "Examples/Ground Example/_22_7288515.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        0.92,
-        0.72,
-        0.42,
-        0.9
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 0.74,
-      "iou": 0.9949,
-      "confidence": 0.8415
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_23_8824051.jpeg",
@@ -220,14 +228,14 @@
       "path": "Examples/Ground Example/_25_6973103.jpeg",
       "detected": true,
       "corner_errors": [
-        1.07,
-        2.19,
-        0.55,
-        0.56
+        256.83,
+        257.22,
+        171.74,
+        171.34
       ],
-      "mean_error": 1.09,
-      "iou": 0.9932,
-      "confidence": 0.8256
+      "mean_error": 214.28,
+      "iou": 0.1112,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_26_2367620.jpeg",
@@ -253,7 +261,7 @@
       ],
       "mean_error": 3.18,
       "iou": 0.9796,
-      "confidence": 0.7523
+      "confidence": 0.7438
     },
     {
       "path": "Examples/Ground Example/_28_5892129.jpeg",
@@ -262,63 +270,63 @@
         2.7,
         1.52,
         0.64,
-        3.07
+        10.82
       ],
-      "mean_error": 1.98,
-      "iou": 0.9813,
-      "confidence": 0.3288
+      "mean_error": 3.92,
+      "iou": 0.9579,
+      "confidence": 0.3236
     },
     {
       "path": "Examples/Ground Example/_29_6619443.jpeg",
       "detected": true,
       "corner_errors": [
-        1.26,
-        0.84,
-        1.02,
-        1.99
+        265.71,
+        274.88,
+        72.62,
+        66.51
       ],
-      "mean_error": 1.28,
-      "iou": 0.9889,
-      "confidence": 0.4638
+      "mean_error": 169.93,
+      "iou": 0.1202,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_2_7195276.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        16.03,
-        2.24,
-        1.59,
-        9.22
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 7.27,
-      "iou": 0.9605,
-      "confidence": 0.9973
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_31_3233783.jpeg",
       "detected": true,
       "corner_errors": [
-        1.25,
-        1.17,
-        1.35,
-        1.68
+        195.34,
+        224.35,
+        154.3,
+        166.5
       ],
-      "mean_error": 1.36,
-      "iou": 0.992,
-      "confidence": 0.6233
+      "mean_error": 185.12,
+      "iou": 0.0432,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_33_3803709.jpeg",
       "detected": true,
       "corner_errors": [
-        195.19,
-        189.02,
-        28.2,
-        27.72
+        2.52,
+        2.42,
+        1.26,
+        2.3
       ],
-      "mean_error": 110.03,
-      "iou": 0.5147,
-      "confidence": 0.5332
+      "mean_error": 2.12,
+      "iou": 0.9784,
+      "confidence": 0.2715
     },
     {
       "path": "Examples/Ground Example/_35_4619569.jpeg",
@@ -335,16 +343,16 @@
     },
     {
       "path": "Examples/Ground Example/_36_7633287.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        0.72,
-        1.79,
-        1.5,
-        0.81
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 1.21,
-      "iou": 0.9924,
-      "confidence": 0.5909
+      "mean_error": null,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_37_8708315.jpeg",
@@ -374,16 +382,16 @@
     },
     {
       "path": "Examples/Ground Example/_39_4570412.jpeg",
-      "detected": false,
+      "detected": true,
       "corner_errors": [
-        null,
-        null,
-        null,
-        null
+        2.8,
+        2.38,
+        1.0,
+        0.76
       ],
-      "mean_error": null,
-      "iou": 0.0,
-      "confidence": 0.0
+      "mean_error": 1.73,
+      "iou": 0.991,
+      "confidence": 0.8633
     },
     {
       "path": "Examples/Ground Example/_40_9914911.jpeg",
@@ -391,25 +399,25 @@
       "corner_errors": [
         2.35,
         3.59,
-        4.12,
+        2.53,
         3.29
       ],
-      "mean_error": 3.34,
-      "iou": 0.9858,
+      "mean_error": 2.94,
+      "iou": 0.9894,
       "confidence": 1.0
     },
     {
       "path": "Examples/Ground Example/_41_6129749.jpeg",
       "detected": true,
       "corner_errors": [
-        2.04,
-        1.24,
-        0.86,
-        1.77
+        332.74,
+        407.61,
+        284.58,
+        120.73
       ],
-      "mean_error": 1.48,
-      "iou": 0.9927,
-      "confidence": 1.0
+      "mean_error": 286.42,
+      "iou": 0.0259,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_44_756500.jpeg",
@@ -422,46 +430,46 @@
       ],
       "mean_error": 1.72,
       "iou": 0.9911,
-      "confidence": 0.9659
+      "confidence": 0.9566
     },
     {
       "path": "Examples/Ground Example/_46_3178649.jpeg",
       "detected": true,
       "corner_errors": [
-        4.04,
-        1.73,
-        1.23,
-        0.44
+        142.65,
+        140.1,
+        250.89,
+        260.88
       ],
-      "mean_error": 1.86,
-      "iou": 0.9881,
-      "confidence": 0.7552
+      "mean_error": 198.63,
+      "iou": 0.1093,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_4_3941682.jpeg",
-      "detected": true,
+      "detected": false,
       "corner_errors": [
-        343.59,
-        316.48,
-        320.91,
-        332.07
+        null,
+        null,
+        null,
+        null
       ],
-      "mean_error": 328.26,
+      "mean_error": null,
       "iou": 0.0,
-      "confidence": 0.4123
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_5_6718731.jpeg",
       "detected": true,
       "corner_errors": [
-        0.87,
-        1.5,
-        1.86,
-        3.32
+        230.07,
+        232.87,
+        75.76,
+        71.44
       ],
-      "mean_error": 1.89,
-      "iou": 0.9837,
-      "confidence": 0.3712
+      "mean_error": 152.54,
+      "iou": 0.0,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_6_3429557.jpeg",
@@ -474,13 +482,13 @@
       ],
       "mean_error": 4.29,
       "iou": 0.9601,
-      "confidence": 0.4633
+      "confidence": 0.4571
     },
     {
       "path": "Examples/Ground Example/_8_607650.jpeg",
       "detected": true,
       "corner_errors": [
-        0.9,
+        0.89,
         0.41,
         1.52,
         1.59
@@ -493,27 +501,27 @@
       "path": "Examples/Ground Example/_20_2431873.jpeg",
       "detected": true,
       "corner_errors": [
-        1.68,
-        1.3,
-        1.58,
-        1.5
+        337.09,
+        343.19,
+        158.89,
+        164.94
       ],
-      "mean_error": 1.52,
-      "iou": 0.9906,
-      "confidence": 0.8799
+      "mean_error": 251.03,
+      "iou": 0.0372,
+      "confidence": 0.0
     },
     {
       "path": "Examples/Ground Example/_3_3543940.jpeg",
       "detected": true,
       "corner_errors": [
-        0.92,
-        0.26,
-        0.3,
+        214.01,
+        265.8,
+        201.59,
         1.7
       ],
-      "mean_error": 0.8,
-      "iou": 0.9941,
-      "confidence": 0.5174
+      "mean_error": 170.78,
+      "iou": 0.1406,
+      "confidence": 0.0
     }
   ]
 }
