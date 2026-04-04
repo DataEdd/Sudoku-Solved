@@ -29,7 +29,7 @@ class CNNRecognizer:
         self,
         onnx_path: str | Path = DEFAULT_ONNX,
         pth_path: str | Path = DEFAULT_PTH,
-        confidence_threshold: float = 0.7,
+        confidence_threshold: float = 0.85,
         empty_threshold: float = 0.03,
         device: str = "auto",
     ):
@@ -90,7 +90,12 @@ class CNNRecognizer:
         return str(self._torch_device)
 
     def _preprocess(self, cell: np.ndarray) -> np.ndarray:
-        """Preprocess a cell image to 28x28 grayscale, white-on-black."""
+        """Preprocess a cell image to 28x28 grayscale, white-on-black.
+
+        Uses inverted + normalized grayscale instead of Otsu binarization.
+        This matches MNIST training data distribution better than binary
+        thresholding and preserves anti-aliasing information.
+        """
         if len(cell.shape) == 3:
             cell = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
 
@@ -99,12 +104,15 @@ class CNNRecognizer:
         cell = cell[margin_y:-margin_y, margin_x:-margin_x]
 
         cell = cv2.resize(cell, (28, 28), interpolation=cv2.INTER_AREA)
-        _, cell = cv2.threshold(cell, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # Invert (white-on-black like MNIST) and normalize contrast
+        cell = 255 - cell
+        cell = cv2.normalize(cell, None, 0, 255, cv2.NORM_MINMAX)
         return cell
 
     def _is_empty(self, processed: np.ndarray) -> bool:
-        white_ratio = np.sum(processed == 255) / processed.size
-        return white_ratio < self.empty_threshold
+        """Check if a preprocessed cell is empty based on content intensity."""
+        mean_val = np.mean(processed)
+        return mean_val < self.empty_threshold * 255
 
     def _infer_onnx(self, batch: np.ndarray) -> np.ndarray:
         """Run ONNX inference. batch: (N, 1, 28, 28) float32 -> (N, 10) logits."""
@@ -124,6 +132,15 @@ class CNNRecognizer:
         e = np.exp(logits - logits.max(axis=1, keepdims=True))
         return e / e.sum(axis=1, keepdims=True)
 
+    def _predict_from_probs(self, probs: np.ndarray) -> Tuple[int, float]:
+        """Predict digit from probability vector. Uses classes 1-9 only."""
+        digit_probs = probs[1:]  # classes 1-9
+        best_digit = int(digit_probs.argmax()) + 1
+        best_conf = float(digit_probs.max())
+        if best_conf < self.confidence_threshold:
+            return 0, best_conf
+        return best_digit, best_conf
+
     def predict(self, cell: np.ndarray) -> Tuple[int, float]:
         processed = self._preprocess(cell)
         if self._is_empty(processed):
@@ -136,13 +153,8 @@ class CNNRecognizer:
         else:
             logits = self._infer_torch(batch)
 
-        probs = self._softmax(logits)
-        digit = int(probs[0].argmax())
-        conf = float(probs[0].max())
-
-        if conf < self.confidence_threshold:
-            return 0, conf
-        return digit, conf
+        probs = self._softmax(logits)[0]
+        return self._predict_from_probs(probs)
 
     def predict_batch(self, cells: List[np.ndarray]) -> List[Tuple[int, float]]:
         results: List[Tuple[int, float]] = []
@@ -167,15 +179,7 @@ class CNNRecognizer:
                 logits = self._infer_torch(batch)
 
             probs = self._softmax(logits)
-            predictions = probs.argmax(axis=1)
-            confidences = probs.max(axis=1)
-
             for j, idx in enumerate(batch_indices):
-                digit = int(predictions[j])
-                conf = float(confidences[j])
-                if conf < self.confidence_threshold:
-                    results[idx] = (0, conf)
-                else:
-                    results[idx] = (digit, conf)
+                results[idx] = self._predict_from_probs(probs[j])
 
         return results

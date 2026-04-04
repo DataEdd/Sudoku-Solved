@@ -79,7 +79,6 @@ const Grid = {
 
         const cells = container.querySelectorAll('.sudoku-cell');
         const confidenceMap = options.confidenceMap || null;
-        const confidenceThreshold = 0.85;
 
         values.flat().forEach((val, idx) => {
             const cell = cells[idx];
@@ -92,13 +91,18 @@ const Grid = {
                 cell.classList.add('sudoku-cell--fixed');
             }
 
-            // Mark low-confidence cells with orange dot
+            // Color-code cells by OCR confidence level
             if (confidenceMap && val !== 0) {
                 const row = Math.floor(idx / 9);
                 const col = idx % 9;
                 const conf = confidenceMap[row][col];
-                if (conf < confidenceThreshold) {
-                    cell.classList.add('sudoku-cell--low-confidence');
+                if (conf >= 0.8) {
+                    cell.classList.add('confidence-high');
+                } else if (conf >= 0.5) {
+                    cell.classList.add('confidence-medium');
+                    cell.title = `Confidence: ${Math.round(conf * 100)}%`;
+                } else {
+                    cell.classList.add('confidence-low');
                     cell.title = `Confidence: ${Math.round(conf * 100)}%`;
                 }
             }

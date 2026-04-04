@@ -277,6 +277,63 @@ def extract_cells_piecewise(
     return cells
 
 
+def infer_center_corners(warped: np.ndarray) -> Optional[np.ndarray]:
+    """Detect the 4 center-box corners from a warped grid image.
+
+    Uses morphological line extraction to find the thick gridlines at
+    the 1/3 and 2/3 positions. Returns the 4 intersection points
+    [CTL, CTR, CBR, CBL] in warped-image coordinates, or None if
+    detection fails.
+    """
+    h, w = warped.shape[:2]
+    gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY) if len(warped.shape) == 3 else warped
+
+    thresh = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV, 15, 2,
+    )
+
+    # Extract long horizontal / vertical lines
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (w // 4, 1))
+    h_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, h_kernel)
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, h // 4))
+    v_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, v_kernel)
+
+    h_proj = np.sum(h_lines, axis=1).astype(float)
+    v_proj = np.sum(v_lines, axis=0).astype(float)
+
+    def _find_peaks(proj: np.ndarray, min_dist: int) -> List[int]:
+        if np.max(proj) == 0:
+            return []
+        thr = np.max(proj) * 0.3
+        peaks: List[int] = []
+        for i in range(1, len(proj) - 1):
+            if prof := proj[i]:
+                if prof > thr and prof >= proj[i - 1] and prof >= proj[i + 1]:
+                    if not peaks or (i - peaks[-1]) >= min_dist:
+                        peaks.append(i)
+        return peaks
+
+    h_peaks = _find_peaks(h_proj, h // 15)
+    v_peaks = _find_peaks(v_proj, w // 15)
+
+    if len(h_peaks) < 4 or len(v_peaks) < 4:
+        return None
+
+    # Find lines closest to 1/3 and 2/3 positions
+    h_third = min(h_peaks, key=lambda p: abs(p - h / 3))
+    h_two_third = min(h_peaks, key=lambda p: abs(p - 2 * h / 3))
+    v_third = min(v_peaks, key=lambda p: abs(p - w / 3))
+    v_two_third = min(v_peaks, key=lambda p: abs(p - 2 * w / 3))
+
+    return np.array([
+        [v_third, h_third],          # CTL
+        [v_two_third, h_third],      # CTR
+        [v_two_third, h_two_third],  # CBR
+        [v_third, h_two_third],      # CBL
+    ], dtype=np.float32)
+
+
 # ---------------------------------------------------------------------------
 # Structure-aware scoring for detect_grid_v2
 # ---------------------------------------------------------------------------

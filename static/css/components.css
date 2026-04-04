@@ -164,16 +164,19 @@
     background: rgba(0, 212, 255, 0.2);
 }
 
-/* Low confidence indicator */
-.sudoku-cell--low-confidence::after {
-    content: '';
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--color-orange);
+/* OCR confidence levels */
+.confidence-high {
+    /* Default appearance — no extra styling */
+}
+
+.confidence-medium {
+    color: var(--color-orange);
+    background: rgba(245, 158, 11, 0.12);
+}
+
+.confidence-low {
+    color: var(--color-red);
+    background: rgba(239, 68, 68, 0.15);
 }
 
 /* Mini grid for history thumbnails */

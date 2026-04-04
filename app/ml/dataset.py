@@ -11,6 +11,7 @@ Augmentations simulate real camera capture: rotation, affine warp,
 noise, blur, and brightness variation.
 """
 
+import os
 import random
 from typing import Tuple
 
@@ -72,6 +73,123 @@ class EmptyCellDataset(Dataset):
                     else:
                         img[:, -t:] = b
             return img
+
+
+class PrintedDigitDataset(Dataset):
+    """Synthetic printed digits rendered from system fonts.
+
+    Generates digit images (1-9) in various fonts at 28x28, white-on-black,
+    matching the MNIST format. Covers the printed digit domain that MNIST
+    (handwritten only) misses.
+
+    Class 0 is not generated here — empty cells are handled by EmptyCellDataset.
+    """
+
+    def __init__(
+        self,
+        count_per_digit: int = 500,
+        size: int = 28,
+        seed: int = 42,
+    ):
+        from PIL import Image, ImageDraw, ImageFont
+
+        self.size = size
+        self.rng = np.random.RandomState(seed)
+
+        # Discover system fonts
+        font_dirs = [
+            "/System/Library/Fonts",
+            "/System/Library/Fonts/Supplemental",
+            "/Library/Fonts",
+            "/usr/share/fonts",
+            "/usr/share/fonts/truetype",
+        ]
+        font_paths = []
+        for d in font_dirs:
+            if not os.path.isdir(d):
+                continue
+            for f in os.listdir(d):
+                if f.endswith((".ttf", ".ttc", ".otf")):
+                    font_paths.append(os.path.join(d, f))
+
+        # Filter to fonts that can actually render digits
+        self.fonts = []
+        for fp in font_paths:
+            try:
+                font = ImageFont.truetype(fp, 18)
+                # Quick render test
+                img = Image.new("L", (28, 28), 0)
+                draw = ImageDraw.Draw(img)
+                draw.text((5, 2), "5", fill=255, font=font)
+                arr = np.array(img)
+                if arr.max() > 50:  # font actually renders visible pixels
+                    self.fonts.append(fp)
+            except Exception:
+                pass
+
+        if not self.fonts:
+            # Fallback: use PIL default font
+            self.fonts = [None]
+
+        self.images = []
+        self.labels = []
+
+        for digit in range(1, 10):
+            for _ in range(count_per_digit):
+                img = self._render_digit(digit)
+                self.images.append(img)
+                self.labels.append(digit)
+
+    def _render_digit(self, digit: int) -> np.ndarray:
+        from PIL import Image, ImageDraw, ImageFont
+
+        s = self.size
+        img = Image.new("L", (s, s), 0)
+        draw = ImageDraw.Draw(img)
+
+        # Random font and size
+        fp = self.fonts[self.rng.randint(len(self.fonts))]
+        font_size = self.rng.randint(16, 24)
+        try:
+            font = ImageFont.truetype(fp, font_size) if fp else ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+
+        text = str(digit)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+        # Center with slight random offset
+        x = (s - tw) // 2 + self.rng.randint(-2, 3)
+        y = (s - th) // 2 + self.rng.randint(-2, 3)
+        draw.text((x, y), text, fill=255, font=font)
+
+        arr = np.array(img)
+
+        # Random augmentation
+        if self.rng.random() < 0.3:
+            import cv2
+            angle = self.rng.uniform(-10, 10)
+            M = cv2.getRotationMatrix2D((s / 2, s / 2), angle, 1.0)
+            arr = cv2.warpAffine(arr, M, (s, s))
+
+        if self.rng.random() < 0.2:
+            noise = self.rng.normal(0, 8, arr.shape)
+            arr = np.clip(arr.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+
+        if self.rng.random() < 0.2:
+            import cv2
+            arr = cv2.GaussianBlur(arr, (3, 3), 0)
+
+        return arr
+
+    def __len__(self) -> int:
+        return len(self.images)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, int]:
+        img = self.images[idx]
+        tensor = torch.from_numpy(img).unsqueeze(0).float() / 255.0
+        return tensor, self.labels[idx]
 
 
 class AugmentedDataset(Dataset):
@@ -162,9 +280,10 @@ def create_datasets(
     mnist_train = _load_mnist(train=True)
     mnist_test = _load_mnist(train=False)
 
-    # Add synthetic empty cells to train
+    # Add synthetic empty cells + printed font digits to train
     empty_train = EmptyCellDataset(count=empty_cell_count, seed=seed)
-    full_train = ConcatDataset([mnist_train, empty_train])
+    printed_train = PrintedDigitDataset(count_per_digit=500, seed=seed)
+    full_train = ConcatDataset([mnist_train, empty_train, printed_train])
 
     # Split train into train + val (90/10)
     n = len(full_train)
