@@ -28,6 +28,8 @@ Thumbs.db
 uploads/
 *.tmp
 TODO
+# Full example dataset (large, not committed)
+# Curated samples are in static/samples/ instead
 Examples
 
 # Generated artifacts

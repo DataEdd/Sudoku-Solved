@@ -15,7 +15,11 @@ from fastapi.requests import Request
 
 from app.api.v1.endpoints.sudoku import router as sudoku_router
 
-app = FastAPI(title="Sudoku Solver")
+app = FastAPI(
+    title="Sudoku Solver",
+    description="Extract and solve Sudoku puzzles from photos using computer vision and a custom CNN.",
+    version="1.0.0",
+)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
@@ -38,12 +42,23 @@ async def debug_page(request: Request):
 @app.get("/api/health")
 async def health():
     """Health check with model status."""
-    cnn_available = Path("app/ml/checkpoints/sudoku_cnn.pth").exists()
+    onnx_available = Path("app/ml/checkpoints/sudoku_cnn.onnx").exists()
+    pth_available = Path("app/ml/checkpoints/sudoku_cnn.pth").exists()
     return {
         "status": "ok",
-        "ocr": "cnn" if cnn_available else "tesseract",
+        "ocr": "cnn" if (onnx_available or pth_available) else "tesseract",
         "solvers": ["backtracking", "simulated_annealing"],
     }
+
+
+@app.get("/api/samples")
+async def list_samples():
+    """List sample images available for testing."""
+    samples_dir = Path("static/samples")
+    if not samples_dir.exists():
+        return {"samples": []}
+    files = sorted(f.name for f in samples_dir.glob("*.jpeg"))
+    return {"samples": files, "count": len(files)}
 
 
 @app.get("/sw.js")

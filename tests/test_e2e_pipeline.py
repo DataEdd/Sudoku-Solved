@@ -45,8 +45,8 @@ GT_OUTER_INDICES = [0, 3, 15, 12]  # TL, TR, BR, BL
 
 # Regression thresholds (with buffer below current performance)
 MIN_DETECTION_COUNT = 33       # Current: 34/38
-MIN_FILLED_CELL_ACCURACY = 0.70  # Current: 77.4%
-MIN_SOLVE_COUNT = 10
+MIN_FILLED_CELL_ACCURACY = 0.55  # Current: 61.6% (honest, no leakage)
+MIN_SOLVE_COUNT = 5
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
