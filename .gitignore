@@ -41,3 +41,5 @@ tests/output/
 data/mnist/
 *.ipynb_checkpoints/
 research/
+# CV sync — local notes, never commit
+CV_NOTES.md
