@@ -30,9 +30,13 @@ Thumbs.db
 uploads/
 *.tmp
 TODO
-# Full example dataset (large, not committed)
-# Curated samples are in static/samples/ instead
-Examples
+# Track only the ~2 MB Ground Example GT set under Examples/; the aug/
+# directory (124 MB augmented data) and unsolved_dataset.zip (118 MB) stay
+# out of git — they are bulk training artefacts, not part of the shipped
+# benchmark dataset. The Ground Example images are what the reproducible
+# benchmark harnesses and CI tests depend on, so they go in the repo.
+Examples/*
+!Examples/Ground Example/
 
 # Generated artifacts
 output/
