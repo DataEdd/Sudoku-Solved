@@ -54,6 +54,12 @@ notebooks/*/
 # Large data files
 data/mnist/
 data/chars74k/
+
+# Results dataset: the 38 image copies under data/results_dataset/images/
+# are gitignored because they're already tracked at Examples/Ground Example/.
+# `python -m scripts.build_results_dataset` regenerates them before Kaggle
+# upload. The dataset card, JSONL, and CSV metadata files ARE tracked.
+data/results_dataset/images/
 *.ipynb_checkpoints/
 research/
 # CV sync — local notes, never commit
