@@ -1,9 +1,22 @@
 """Build the 2620-image labeled Sudoku dataset for Kaggle publication.
 
 Runs the shipped v5.1 production pipeline (`detect_grid` → 4-point
-warp → CNN OCR → backtracking solver) on every image in the mexwell
-`unsolved` set (the extracted copy at ``Examples/aug/``), and records
-the pipeline's best-attempt labels with a deliberately simple schema:
+warp → CNN OCR → backtracking solver) on every image in the augmented
+Sudoku photograph set (the extracted copy at ``Examples/aug/``), and
+records the pipeline's best-attempt labels with a deliberately simple
+schema:
+
+**Provenance chain of the source images** (3 levels):
+
+1. Canonical — ``github.com/wichtounet/sudoku_dataset`` (Baptiste
+   Wicht / iCoSys research group, University of Fribourg). Original
+   photograph set with per-image ground-truth annotations.
+2. Proximate — ``kaggle.com/datasets/macfooty/sudoku-box-detection``
+   (augmented redistribution on Kaggle; the README on that dataset
+   promised annotations but never uploaded them, leaving it as
+   images-only).
+3. This dataset — pipeline labels produced by running the v5.1
+   Sudoku-Solved pipeline over macfooty's augmented images.
 
   filename
   source                             — upstream attribution string
@@ -135,7 +148,7 @@ def process_image(
     record: Dict[str, Any] = {
         "filename": filename,
         "index": parse_index(filename),
-        "source": "mexwell/sudoku-image-dataset",
+        "source": "macfooty/sudoku-box-detection (augmented from wichtounet/sudoku_dataset)",
         "has_ground_truth_benchmark": filename in gt_filenames,
 
         "detectable": False,
@@ -333,44 +346,28 @@ def write_dataset_card(
         else 0.0
     )
 
-    card = rf"""# Sudoku Pipeline Labels — mexwell/sudoku-image-dataset
+    card = rf"""# Real-World Sudoku OCR: Detection, Labels, Solved
 
-**{n_total} Sudoku images from
-[mexwell/sudoku-image-dataset](https://www.kaggle.com/datasets/mexwell/sudoku-image-dataset/data)
-labeled with a best-attempt pass from the shipped v5.1
-[Sudoku-Solved](https://github.com/DataEdd/Sudoku-Solved) pipeline.**
+**TL;DR** — {n_total} real-world Sudoku photographs (augmented from
+[wichtounet/sudoku_dataset](https://github.com/wichtounet/sudoku_dataset)
+via [macfooty/sudoku-box-detection](https://www.kaggle.com/datasets/macfooty/sudoku-box-detection))
+run through a custom CV + CNN + backtracking pipeline, with the
+detection quad, per-cell OCR labels, and solver output attached to
+each image. **{n_detectable}/{n_total}** images detect cleanly,
+**{n_solvable}/{n_total}** have a pipeline output that solves. A
+**{n_gt}-image hand-annotated ground-truth subset** sits in
+`ground_truth_benchmark/` for validation work (annotations were
+absent from the macfooty redistribution, so we hand-authored our
+own for this repo). License: CC BY 4.0.
 
-Each image gets:
+```python
+import pandas as pd
+df = pd.read_csv("data.csv")
+print(f"{{df['detectable'].sum()}}/{{len(df)}} detected, "
+      f"{{df['solvable'].sum()}}/{{len(df)}} solvable")
+```
 
-1. **`detectable`** — did `detect_grid` return a 4-point quadrilateral?
-2. **`best_guess_grid`** — the CNN's 9×9 predicted grid (or `null`)
-3. **`best_guess_confidence`** — 9×9 per-cell max-softmax confidence
-4. **`solvable`** — does the best-guess grid solve under MRV
-   backtracking without contradiction?
-5. **`solved_grid`** — the full 9×9 solution if solvable
-
-No ground-truth columns (corners, digit grids, per-cell accuracy)
-are included for these labels — they are pipeline predictions, not
-hand-verified annotations. For the **{n_gt}-image ground-truth
-subset** that does have full annotations (16-point corner
-annotations, 9×9 digit grids, per-cell accuracy metrics, failure-
-mode classification), see the companion
-[Sudoku OCR GT Benchmark](https://github.com/DataEdd/Sudoku-Solved/tree/main/data/results_dataset)
-inside the main repository. The `has_ground_truth_benchmark` flag
-on each record here points at the subset.
-
-This dataset is intended as a starting point for:
-
-- Training set for alternative Sudoku OCR approaches (soft labels
-  with pipeline confidence give you a larger-than-raw training
-  signal than the {n_gt}-image hand-annotated benchmark alone).
-- Competitor pipelines: compare your own Sudoku detector / OCR /
-  solver against this one by recomputing labels on the same images
-  and diffing.
-- Failure-mode inspection: the `detectable=False` subset and
-  `solvable=False` subset are both interesting failure buckets.
-
-## Summary statistics
+## 📊 Summary statistics
 
 | Metric | Value |
 |---|---:|
@@ -385,13 +382,13 @@ Note: the **solvable** count does not mean the labels are correct —
 only that the pipeline's best-guess grid happens to be a valid and
 completable Sudoku. Many correct-looking grids can still be wrong
 at the per-cell level if OCR made offsetting errors that happen
-not to contradict. The ground-truth benchmark subset is the only
-way to check pipeline correctness directly.
+not to contradict. The `ground_truth_benchmark/` subfolder is the
+only way to check pipeline correctness directly.
 
-## Files
+## 📁 Files
 
 ```
-sudoku_pipeline_labels/
+.
 ├── README.md                        ← this dataset card
 ├── data.jsonl                       ← {n_total} bulk records, one per image
 ├── data.csv                         ← flat CSV mirror; nested columns JSON-encoded
@@ -399,30 +396,20 @@ sudoku_pipeline_labels/
 │   ├── _0_1018787.jpeg
 │   ├── _0_1436352.jpeg
 │   └── ...
-└── ground_truth_benchmark/          ← 38-image hand-annotated benchmark
+└── ground_truth_benchmark/          ← {n_gt}-image hand-annotated benchmark
     ├── README.md                    ← GT-benchmark dataset card
-    ├── data.jsonl                   ← 38 records with rich schema
-    └── data.csv                     ← flat CSV mirror of the 38
+    ├── data.jsonl                   ← {n_gt} records with rich schema
+    └── data.csv                     ← flat CSV mirror of the {n_gt}
 ```
 
-The **`ground_truth_benchmark/`** subfolder contains the 38-image
-hand-annotated validation subset with a richer schema: 16-point corner
-annotations, multi-value 9×9 ground-truth grids, per-cell accuracy
-metrics, detection-IoU, pixel-level corner error, and a hand-authored
-per-image failure taxonomy. The image files for these 38 records are
-*not* duplicated inside the subfolder — they already appear in the
-parent `images/` directory and can be looked up by filename. Use the
-subfolder when you want validated pipeline outputs for benchmarking
-your own CV/OCR work against a known-good reference.
-
-## Schema (one record per image)
+## 🔑 Schema (one record per image)
 
 | Field | Type | Description |
 |---|---|---|
 | `filename` | str | JPEG filename, matches `images/` entry |
 | `index` | int \| null | Numeric index from the `_<index>_<hash>.jpeg` naming scheme |
 | `source` | str | Upstream attribution string |
-| `has_ground_truth_benchmark` | bool | True for the 38 images also in the companion GT-benchmark dataset |
+| `has_ground_truth_benchmark` | bool | True for the {n_gt} images in `ground_truth_benchmark/` |
 | `detectable` | bool | Whether `detect_grid` returned a valid 4-point quadrilateral |
 | `detected_corners_4` | list[4][2] \| null | 4-point detected quadrilateral (pixel coordinates) |
 | `best_guess_grid` | list[9][9] \| null | CNN's 9×9 predicted grid — `0` means empty |
@@ -432,7 +419,7 @@ your own CV/OCR work against a known-good reference.
 | `solved_grid` | list[9][9] \| null | Full 9×9 solution if `solvable` |
 | `solve_time_ms` | float \| null | Backtracking solver latency |
 
-## Usage example
+## 💻 Usage example
 
 ```python
 import json
@@ -453,9 +440,9 @@ print(f"{{len(undetected)}} undetected images")
 solvable = df[df["solvable"]]
 print(f"{{len(solvable)}} solvable pipeline outputs")
 
-# "Cross-reference with the GT benchmark"
+# "Cross-reference with the ground-truth benchmark"
 gt_subset = df[df["has_ground_truth_benchmark"]]
-print(f"{{len(gt_subset)}} images also in the GT benchmark")
+print(f"{{len(gt_subset)}} images also in ground_truth_benchmark/")
 ```
 
 Or stream the nested JSONL directly:
@@ -470,23 +457,64 @@ for r in records[:5]:
     print(r["filename"], r["detectable"], r["solvable"])
 ```
 
-## Attribution and license
+## 🎯 Ground-truth benchmark subfolder
 
-- **Images:** [mexwell/sudoku-image-dataset]
-  (https://www.kaggle.com/datasets/mexwell/sudoku-image-dataset/data)
-  — credit mexwell as the upstream photographic source.
-- **Labels:** produced by [DataEdd/Sudoku-Solved]
+The **`ground_truth_benchmark/`** subfolder contains a
+**{n_gt}-image hand-annotated validation subset** with a richer
+schema than the bulk dataset:
+
+- **16-point corner annotations** (not just the 4-point outer quad)
+- **Multi-value 9×9 ground-truth grids** (ambiguous cells accept any
+  of the listed digits)
+- **Per-cell accuracy metrics** — filled/empty rates, wrong / missed
+  / hallucinated cell counts
+- **Detection IoU and pixel-level corner error** against the GT
+- **Hand-authored failure taxonomy** + per-image notes for the
+  worst-performing images
+
+The image files for these {n_gt} records are **not** duplicated
+inside the subfolder — they already appear in the parent `images/`
+directory and can be looked up by filename via the
+`has_ground_truth_benchmark` flag on the main `data.jsonl`.
+
+**Use the bulk dataset** (`data.jsonl` / `data.csv` + `images/`)
+when you want the full {n_total}-image best-attempt labels for
+training, benchmarking, or failure-mode inspection.
+
+**Use the GT subfolder** (`ground_truth_benchmark/data.jsonl`)
+when you want validated pipeline outputs to compare your own
+CV/OCR pipeline against a known-good reference.
+
+## 📜 Attribution and license
+
+- **Canonical image source:** [wichtounet/sudoku_dataset]
+  (https://github.com/wichtounet/sudoku_dataset) — Baptiste Wicht,
+  iCoSys research group at University of Fribourg. The original
+  photograph set (with per-image annotations) lives there. Please
+  cite the canonical source if you use these images in research.
+- **Proximate source (where these specific files came from):**
+  [macfooty/sudoku-box-detection]
+  (https://www.kaggle.com/datasets/macfooty/sudoku-box-detection) —
+  an augmented extension of the wichtounet set. macfooty's README
+  promised annotations ("I will be uploading the annotations soon
+  too") but never uploaded them, so this dataset inherits only the
+  images from the redistribution, not the ground-truth labels.
+- **Labels in this dataset:** produced by [DataEdd/Sudoku-Solved]
   (https://github.com/DataEdd/Sudoku-Solved) v5.1 shipped checkpoint
-  (102K-parameter custom CNN + MRV backtracking solver).
+  (102K-parameter custom CNN + MRV backtracking solver). The
+  38-image hand-annotated subset in `ground_truth_benchmark/` was
+  authored from scratch because the macfooty redistribution did
+  not carry the wichtounet annotations.
 - **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
   Use the dataset freely for research, education, commercial work, or
   derivative benchmarks — the only requirement is that you credit this
-  dataset and the upstream mexwell source when you republish or extend
-  it. Both the label fields (produced here) and the underlying image
-  files (upstream mexwell set) are released under the same CC BY 4.0
-  terms.
+  dataset AND the upstream wichtounet/macfooty sources when you
+  republish or extend it. Both the label fields (produced here) and
+  the underlying image files (upstream) are released under the same
+  CC BY 4.0 terms.
 
-## Pipeline details
+<details>
+<summary><strong>🔧 Pipeline details — click to expand</strong></summary>
 
 Labels were produced by running the shipped v5.1 Sudoku-Solved
 pipeline over each image:
@@ -504,7 +532,9 @@ pipeline over each image:
    + 67-font printed digit set + Chars74K held-out fonts + synthetic
    empty-cell distribution. Confidence threshold 0.50, empty
    threshold 0.03.
-5. **Solver**: MRV-ordered backtracking, single-solution.
+5. **Solver**: MRV-ordered backtracking, single-solution, with a
+   per-image 2-second timeout to avoid thrashing on pathological
+   OCR outputs.
 
 All per-cell predictions include a confidence score so downstream
 users can filter out low-quality reads. A `solvable=True` flag
@@ -513,7 +543,9 @@ box contradictions) AND the backtracking solver finds a complete
 solution; it does **not** guarantee the predicted cells match the
 original image.
 
-## Reproducing this dataset
+</details>
+
+## 🔁 Reproducing this dataset
 
 From a fresh clone of the main project:
 
@@ -523,15 +555,16 @@ cd Sudoku-Solved
 python -m venv venv && source venv/bin/activate
 pip install -r requirements-deploy.txt
 
-# The 2620 source images live at Examples/aug/, which is gitignored.
-# Obtain them from the upstream mexwell Kaggle dataset:
-#   https://www.kaggle.com/datasets/mexwell/sudoku-image-dataset/data
+# The {n_total} source images live at Examples/aug/, which is
+# gitignored. Obtain them from the proximate macfooty Kaggle dataset:
+#   https://www.kaggle.com/datasets/macfooty/sudoku-box-detection
+# (or the canonical wichtounet GitHub repo:
+#   https://github.com/wichtounet/sudoku_dataset)
 # and unzip into Examples/aug/ before running the build.
 
 python -m scripts.build_labeled_dataset
 ```
 
-This regenerates `data/labeled_dataset/` (~25 min on MPS).
 Records will be byte-equivalent to the published version modulo
 solver latency, which varies by CPU.
 """

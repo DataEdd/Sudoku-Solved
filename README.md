@@ -28,6 +28,35 @@ Measured end-to-end against 38 hand-annotated newspaper photos with 16-point cor
 
 The OCR figures are measured using the shipped 102K-parameter CNN checkpoint trained on MNIST + system-font-rendered printed digits (67 allowlist-validated Latin-digit fonts) + Chars74K held-out printed digits + synthetic empty cells — not a plain MNIST baseline. Full per-cell breakdown in `notebooks/ocr_analysis.ipynb`.
 
+## External validation against Wicht (2014)
+
+Beyond the internal 38-image GT benchmark, v5.1 is also measured against **Baptiste Wicht's V2 Sudoku dataset** — a 40-image test set from the 2014 paper [*Camera-based Sudoku recognition with Deep Belief Network*](https://ieeexplore.ieee.org/document/7007986) (Wicht & Hennebert, ICoSoCPaR, University of Fribourg / HES-SO). Wicht's dataset lives at [github.com/wichtounet/sudoku_dataset](https://github.com/wichtounet/sudoku_dataset) under CC BY 4.0. The evaluation script is `scripts/eval_wicht_test.py` and reuses our shipped pipeline without any Wicht-specific training.
+
+| Metric | Wicht 2014 DBN on V1 | Wicht Ph.D. on V2 | **DataEdd v5.1 on V2** |
+|---|---:|---:|---:|
+| **Grid detection** (IoU ≥ 0.9 vs GT outline) | ~87.5% | — | **95.0% (38/40)** |
+| **Perfect-image rate** (all 81 cells correct) | 87.5% | 82.5% | **12.5% (5/40)** |
+| **Filled-cell accuracy** (detected images) | ~99.6% (cell error 0.37%) | — | 58.5% (676/1156) |
+| **Empty-cell accuracy** (detected images) | — | — | 99.2% (2067/2084) |
+
+**Two honest claims the data supports:**
+
+1. **Detection is strictly more robust** — 95% vs Wicht's 87.5%, thanks to a contour-based fallback chain that handles phone-generation variance better than his Hough-transform approach. Both wrong-region failures in the Wicht V2 set are on 2007-era Sony Ericsson t660i photos (`image25.jpg`, `image32.jpg`) where the detector locks onto non-grid regions.
+
+2. **OCR is dramatically worse on his test distribution** — 12.5% perfect-image rate vs 82.5%. The gap is a **training-distribution mismatch**, not a model-capacity shortfall. Wicht trained his DBN directly on 120 real photos from the same phones as his test set; v5.1 has never seen a real newspaper Sudoku photo during training (MNIST + 67-font printed digits + Chars74K + synthetic empties, all augmented toward our own 38-image GT distribution). The v6 retrain experiment confirmed that larger classifiers don't help across distribution shift — see [`data/results_dataset/README.md`](data/results_dataset/README.md).
+
+The per-phone breakdown tells the whole story:
+
+| Phone | Era | Images | Perfect rate |
+|---|---|---:|---:|
+| iPhone 5s | 2013 | 5 | **40%** |
+| iPhone 3GS | 2009 | 4 | **50%** |
+| Samsung Galaxy S4 | 2013 | 4 | 25% |
+| Sony Ericsson w660i / w880i / t660i / s500i | 2006-2008 | 26 | **0%** |
+| Nokia e65 | 2007 | 1 | 0% |
+
+Every 2013+ smartphone in the test set produces at least one perfect image; every pre-2010 phone produces zero. Per-resolution, the 13 Sony Ericsson images at 1600×1200 (the **highest** resolution in the set) get 30% filled-cell accuracy, while the 9 modern-phone images at 960×1280 get 80.6%. Raw resolution doesn't predict pipeline success — sensor generation does. Full methodology comparison, per-image analysis, IoU distributions, and the detection-verification notebook are kept in `docs/internal/wicht_comparison.md` and `docs/internal/wicht_detection_review.ipynb` (gitignored — these are internal notes, not part of the public narrative).
+
 ## How it works
 
 The pipeline has **four stages**, organised in the order data flows through it, and each stage is matched one-to-one with a deep-dive notebook in [`notebooks/`](notebooks/). The subsections below describe *what* each stage does; the notebooks contain *why* it was built that way — earlier iterations, lessons learned, and parameter-tuning rationale.
@@ -283,6 +312,7 @@ The `/debug` route serves an interactive pipeline visualizer — upload an image
 
 ## Roadmap
 
+- [ ] **Train v5.2 on Wicht's `v2_train.desc` training set** (160 real photos, disjoint from the 40-image test set — no leakage). The external-validation section above shows v5.1 gets 12.5% perfect-image rate on Wicht's V2 vs his 82.5%, and the gap is cleanly split by phone generation (40-50% perfect on 2013+ phones, 0% on 2007-era Sony Ericsson). Adding real in-distribution training photos should close most of the gap — estimated +30 to +50 percentage points on the V2 perfect-image rate. Planned as a separate checkpoint track, not a v5.1 replacement, so the out-of-distribution zero-shot number (v5.1) and the in-distribution supervised number (v5.2) can both be reported alongside each other as different points in the training-data / generalization trade-off space.
 - [ ] **Wire `extract_cells_piecewise` (`app/core/extraction.py`) into `/api/extract`** so curved newspaper pages use the 8-point piecewise warp. Currently it's only used in `evaluate_ocr.py --piecewise` and in the annotation preview. Measured upper bound on the 38-image GT is +6.2 filled-cell points over the production 4-point path, and the per-image failure analysis (`notebooks/failure_analysis.ipynb`) shows this is the dominant lever for the worst-performing images (`_1_2180648`, `_11_257486`, `_37_8708315`, partially `_0_1436352`). This is now the top lever on the roadmap because the 2026-04-11 v6 retrain experiment empirically confirmed that the classifier ceiling is real — throwing 4× the parameters at the problem regressed rather than helped. The warp-quality gap between GT corners and `detect_grid` is where the remaining headroom lives, and piecewise warp is the concrete way to close it. Implementation needs an automatic interior-corner detector to replace the GT-corner cheat currently used in `evaluate_ocr.py --piecewise`; candidate approaches documented in `docs/internal/pipeline_review_2026_04_11.md`.
 - [ ] Extend the ablation to the full 27-config grid by running the remaining `dropout ∈ {0.2, 0.5}` rows (18 additional configs, ~90 min on MPS via `python -m evaluation.ablation` without the `--dropout-only` flag). The reduced pass pinned `dropout=0.3`; the full grid would empirically test whether 0.3 is actually optimal, though given that the winning architecture didn't transfer to production the full grid is now lower-priority research rather than a promotion path.
 - [ ] **Grid-extent validation in `_find_best_quad_structured`** — add a post-warp check that downranks candidate quads whose outer strips show header/footer ink density or whose interior line count deviates from the expected ~10-per-axis Sudoku structure. Addresses the `_0_1436352` failure mode where the current scoring picks a quad that extends past the grid into the page header.

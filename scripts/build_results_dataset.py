@@ -303,7 +303,7 @@ def process_image(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     record: Dict[str, Any] = {
         "filename": filename,
         "index": index,
-        "source": "mexwell/sudoku-image-dataset (subset)",
+        "source": "macfooty/sudoku-box-detection (augmented from wichtounet/sudoku_dataset)",
 
         "gt_corners_16": gt_corners,
         "gt_grid": gt_grid,
@@ -443,14 +443,19 @@ Each image carries:
    a concrete root cause in the pipeline
 
 This dataset is the result of running the shipped v5.1 pipeline over
-a curated 38-image subset of **[mexwell/sudoku-image-dataset]
-(https://www.kaggle.com/datasets/mexwell/sudoku-image-dataset/data)**
-that was selected to cover the full range of failure modes: clean
-prints, faded ink, crumpled paper, crossword-adjacent grids, extreme
-blur, hand-filled cells, and more. The point of publishing it is to
-give other people working on Sudoku OCR/pipeline work a single
-concrete benchmark they can compare their own pipeline against,
-without having to re-annotate 38 images themselves.
+a curated 38-image subset of **[macfooty/sudoku-box-detection]
+(https://www.kaggle.com/datasets/macfooty/sudoku-box-detection)** —
+itself an augmented redistribution of the canonical
+**[wichtounet/sudoku_dataset]
+(https://github.com/wichtounet/sudoku_dataset)** — hand-selected to
+cover the full range of failure modes: clean prints, faded ink,
+crumpled paper, crossword-adjacent grids, extreme blur, hand-filled
+cells, and more. The macfooty redistribution dropped the canonical
+annotations, so the 38-image ground truth here was authored from
+scratch. The point of publishing it is to give other people working
+on Sudoku OCR/pipeline work a single concrete benchmark they can
+compare their own pipeline against, without having to re-annotate
+38 images themselves.
 
 ## Summary statistics
 
@@ -576,18 +581,26 @@ for r in records:
 
 ## Attribution and license
 
-- **Images:** curated subset of
-  [mexwell/sudoku-image-dataset](https://www.kaggle.com/datasets/mexwell/sudoku-image-dataset/data)
-  — credit mexwell as the upstream photographic source.
+- **Canonical image source:** [wichtounet/sudoku_dataset]
+  (https://github.com/wichtounet/sudoku_dataset) — Baptiste Wicht,
+  iCoSys research group at University of Fribourg. The original
+  photograph set (with per-image annotations) lives there.
+- **Proximate source (where these specific files came from):**
+  [macfooty/sudoku-box-detection]
+  (https://www.kaggle.com/datasets/macfooty/sudoku-box-detection) —
+  an augmented extension of the wichtounet set. macfooty's README
+  promised annotations but never uploaded them, so the 38-image
+  ground-truth annotations in THIS dataset were authored from
+  scratch (not transcribed from the canonical source).
 - **Annotations + pipeline outputs:** produced by
   [DataEdd/Sudoku-Solved](https://github.com/DataEdd/Sudoku-Solved),
   a portfolio project implementing a Sudoku CV + CNN + solver pipeline.
 - **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
   on both the annotations (produced here) and the underlying image
-  files (upstream mexwell set). Use freely for research, education,
-  commercial work, or derivative benchmarks — the only requirement is
-  that you credit this dataset and the upstream mexwell source when
-  you republish or extend it.
+  files (upstream wichtounet/macfooty set). Use freely for research,
+  education, commercial work, or derivative benchmarks — the only
+  requirement is that you credit this dataset AND the upstream
+  wichtounet/macfooty sources when you republish or extend it.
 
 ## Citation
 
