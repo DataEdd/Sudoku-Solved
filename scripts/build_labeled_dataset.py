@@ -405,9 +405,13 @@ for r in records[:5]:
 - **Labels:** produced by [DataEdd/Sudoku-Solved]
   (https://github.com/DataEdd/Sudoku-Solved) v5.1 shipped checkpoint
   (102K-parameter custom CNN + MRV backtracking solver).
-- **License:** CC BY 4.0 on the labels and derived fields. The
-  underlying images inherit the license of the upstream mexwell
-  dataset — please check the source page for the current terms.
+- **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Use the dataset freely for research, education, commercial work, or
+  derivative benchmarks — the only requirement is that you credit this
+  dataset and the upstream mexwell source when you republish or extend
+  it. Both the label fields (produced here) and the underlying image
+  files (upstream mexwell set) are released under the same CC BY 4.0
+  terms.
 
 ## Pipeline details
 

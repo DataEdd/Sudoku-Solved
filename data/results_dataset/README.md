@@ -163,11 +163,12 @@ for r in records:
 - **Annotations + pipeline outputs:** produced by
   [DataEdd/Sudoku-Solved](https://github.com/DataEdd/Sudoku-Solved),
   a portfolio project implementing a Sudoku CV + CNN + solver pipeline.
-- **License:** CC BY 4.0 — use freely for research, education, or
-  derivative benchmarks; please credit this dataset and the upstream
-  mexwell source if you republish or extend it. If mexwell's source
-  dataset uses a stricter license, that license applies to the image
-  files and this dataset inherits it.
+- **License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+  on both the annotations (produced here) and the underlying image
+  files (upstream mexwell set). Use freely for research, education,
+  commercial work, or derivative benchmarks — the only requirement is
+  that you credit this dataset and the upstream mexwell source when
+  you republish or extend it.
 
 ## Citation
 
