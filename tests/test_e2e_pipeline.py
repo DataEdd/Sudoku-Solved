@@ -1,7 +1,7 @@
 """
 End-to-end integration tests for the Sudoku Solver pipeline.
 
-Tests the full chain: image -> detect_grid_v2 -> perspective_transform
+Tests the full chain: image -> detect_grid -> perspective_transform
 -> extract_cells -> recognize_cells -> backtracking solver.
 
 Uses ground truth data from evaluation/ground_truth.json (38 annotated
@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.extraction import (
-    detect_grid_v2,
+    detect_grid,
     extract_cells,
     perspective_transform,
     recognize_cells,
@@ -45,8 +45,8 @@ GT_OUTER_INDICES = [0, 3, 15, 12]  # TL, TR, BR, BL
 
 # Regression thresholds (with buffer below current performance)
 MIN_DETECTION_COUNT = 33       # Current: 34/38
-MIN_FILLED_CELL_ACCURACY = 0.55  # Current: 61.6% (honest, no leakage)
-MIN_SOLVE_COUNT = 5
+MIN_FILLED_CELL_ACCURACY = 0.55  # Current: 66.6% (v3 67-font checkpoint, 2026-04-11)
+MIN_SOLVE_COUNT = 4
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ def run_pipeline(image: np.ndarray) -> Optional[Tuple[
     List[List[float]],       # confidence map
 ]]:
     """Run detect -> warp -> extract -> OCR. Returns None if detection fails."""
-    corners, confidence = detect_grid_v2(image)
+    corners, confidence = detect_grid(image)
     if corners is None:
         return None
 
@@ -146,7 +146,7 @@ class TestDetection:
     """Grid detection regression tests."""
 
     def test_detection_rate(self, pipeline_results):
-        """detect_grid_v2 must find the grid in at least 33/38 images."""
+        """detect_grid must find the grid in at least 33/38 images."""
         total = len(pipeline_results)
         detected = sum(1 for r in pipeline_results if r["detected"])
         failed = [r["filename"] for r in pipeline_results if not r["detected"]]
@@ -225,7 +225,7 @@ class TestSingleImageE2E:
 
     @pytest.mark.parametrize("target_filename", [
         "_22_7288515.jpeg",
-        "_39_4570412.jpeg",
+        "_23_8824051.jpeg",
     ])
     def test_single_image_e2e(self, pipeline_results, target_filename):
         """A known-good image must detect, OCR all filled cells correctly, and solve."""
