@@ -44,7 +44,7 @@ This dataset is intended as a starting point for:
 | Best-guess grid is solvable | **525/2620** (20.0%) |
 | Ground-truth-benchmark subset | 38/2620 (1.5%) |
 | Mean filled cells per detected image | 28.5 |
-| Median solver latency (ms) | 1.76 |
+| Median solver latency (ms) | 1.71 |
 
 Note: the **solvable** count does not mean the labels are correct —
 only that the pipeline's best-guess grid happens to be a valid and
@@ -57,15 +57,28 @@ way to check pipeline correctness directly.
 
 ```
 sudoku_pipeline_labels/
-├── README.md                 ← this dataset card
-├── data.jsonl                ← 2620 records, one per image, nested schema
-├── data.csv                  ← flat CSV mirror; nested columns JSON-encoded
-└── images/
-    ├── _0_1018787.jpeg
-    ├── _0_1436352.jpeg
-    ├── ...
-    └── _<last>_<hash>.jpeg   (2620 files total)
+├── README.md                        ← this dataset card
+├── data.jsonl                       ← 2620 bulk records, one per image
+├── data.csv                         ← flat CSV mirror; nested columns JSON-encoded
+├── images/                          ← all 2620 source JPEGs
+│   ├── _0_1018787.jpeg
+│   ├── _0_1436352.jpeg
+│   └── ...
+└── ground_truth_benchmark/          ← 38-image hand-annotated benchmark
+    ├── README.md                    ← GT-benchmark dataset card
+    ├── data.jsonl                   ← 38 records with rich schema
+    └── data.csv                     ← flat CSV mirror of the 38
 ```
+
+The **`ground_truth_benchmark/`** subfolder contains the 38-image
+hand-annotated validation subset with a richer schema: 16-point corner
+annotations, multi-value 9×9 ground-truth grids, per-cell accuracy
+metrics, detection-IoU, pixel-level corner error, and a hand-authored
+per-image failure taxonomy. The image files for these 38 records are
+*not* duplicated inside the subfolder — they already appear in the
+parent `images/` directory and can be looked up by filename. Use the
+subfolder when you want validated pipeline outputs for benchmarking
+your own CV/OCR work against a known-good reference.
 
 ## Schema (one record per image)
 

@@ -70,6 +70,15 @@ SOURCE_IMAGES_DIR = PROJECT_ROOT / "Examples" / "aug"
 GT_PATH = PROJECT_ROOT / "evaluation" / "ground_truth.json"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "labeled_dataset"
 
+# The 38-image GT benchmark is maintained separately at
+# data/results_dataset/ by scripts/build_results_dataset.py. We mirror
+# its metadata (README.md, data.jsonl, data.csv — no images, since the
+# 38 JPEGs already appear in the parent images/ folder) into a
+# ground_truth_benchmark/ subfolder of the labeled dataset so Kaggle
+# users can browse both datasets on one page with clear separation.
+GT_BENCHMARK_SOURCE = PROJECT_ROOT / "data" / "results_dataset"
+GT_SUBFOLDER_NAME = "ground_truth_benchmark"
+
 # Per-image solver timeout. The shipped app.core.solver.backtracking()
 # has no max-iteration bound, and pathological OCR outputs can thrash
 # the solver for many seconds before hitting a contradiction. Cap at
@@ -243,6 +252,57 @@ def copy_images(
             shutil.copy2(src, dest / r["filename"])
 
 
+def mirror_gt_benchmark_subfolder(dest: Path) -> None:
+    """Copy the GT-benchmark metadata files into a subfolder of the
+    labeled dataset with an added prefix explaining the relationship.
+
+    We do NOT copy the 38 GT image files — they already appear in the
+    parent ``images/`` directory of the labeled dataset, and Kaggle
+    users can cross-reference by filename. Keeps the subfolder purely
+    about the enriched annotations.
+    """
+    if not GT_BENCHMARK_SOURCE.exists():
+        print(
+            f"  SKIP: {GT_BENCHMARK_SOURCE} not found — "
+            f"run `python -m scripts.build_results_dataset` first"
+            f" to populate the GT benchmark",
+            flush=True,
+        )
+        return
+
+    subfolder = dest / GT_SUBFOLDER_NAME
+    subfolder.mkdir(parents=True, exist_ok=True)
+
+    # Copy data files as-is
+    for fname in ("data.jsonl", "data.csv"):
+        src = GT_BENCHMARK_SOURCE / fname
+        if src.exists():
+            shutil.copy2(src, subfolder / fname)
+
+    # Copy README with a prefix that explains the subfolder context
+    src_readme = GT_BENCHMARK_SOURCE / "README.md"
+    if src_readme.exists():
+        original = src_readme.read_text()
+        prefix = (
+            "> **Subfolder note.** This is the **ground-truth benchmark** "
+            "companion to the main [Sudoku Pipeline Labels](..) dataset. "
+            "The 38 images listed here are a hand-annotated subset of the "
+            "parent dataset's 2620 images — each record in this folder "
+            "carries the rich schema below (16-point corner annotation, "
+            "multi-value 9×9 ground truth, per-cell accuracy, hand-authored "
+            "failure taxonomy) on top of the bulk `best_guess_*` labels "
+            "that appear in the parent `data.jsonl`. The image files "
+            "themselves live in the parent `images/` directory of this "
+            "dataset — look them up by filename.\n"
+            ">\n"
+            "> Use this subfolder when you want **validated** pipeline "
+            "outputs for benchmarking, and use the parent `data.jsonl` "
+            "when you want the full 2620-image best-attempt labels.\n"
+            "\n"
+        )
+        (subfolder / "README.md").write_text(prefix + original)
+
+
 def write_dataset_card(
     records: List[Dict[str, Any]],
     output_dir: Path,
@@ -332,15 +392,28 @@ way to check pipeline correctness directly.
 
 ```
 sudoku_pipeline_labels/
-├── README.md                 ← this dataset card
-├── data.jsonl                ← {n_total} records, one per image, nested schema
-├── data.csv                  ← flat CSV mirror; nested columns JSON-encoded
-└── images/
-    ├── _0_1018787.jpeg
-    ├── _0_1436352.jpeg
-    ├── ...
-    └── _<last>_<hash>.jpeg   ({n_total} files total)
+├── README.md                        ← this dataset card
+├── data.jsonl                       ← {n_total} bulk records, one per image
+├── data.csv                         ← flat CSV mirror; nested columns JSON-encoded
+├── images/                          ← all {n_total} source JPEGs
+│   ├── _0_1018787.jpeg
+│   ├── _0_1436352.jpeg
+│   └── ...
+└── ground_truth_benchmark/          ← 38-image hand-annotated benchmark
+    ├── README.md                    ← GT-benchmark dataset card
+    ├── data.jsonl                   ← 38 records with rich schema
+    └── data.csv                     ← flat CSV mirror of the 38
 ```
+
+The **`ground_truth_benchmark/`** subfolder contains the 38-image
+hand-annotated validation subset with a richer schema: 16-point corner
+annotations, multi-value 9×9 ground-truth grids, per-cell accuracy
+metrics, detection-IoU, pixel-level corner error, and a hand-authored
+per-image failure taxonomy. The image files for these 38 records are
+*not* duplicated inside the subfolder — they already appear in the
+parent `images/` directory and can be looked up by filename. Use the
+subfolder when you want validated pipeline outputs for benchmarking
+your own CV/OCR work against a known-good reference.
 
 ## Schema (one record per image)
 
@@ -533,11 +606,18 @@ def main() -> None:
     write_dataset_card(records, OUTPUT_DIR)
     print(f"Solver timeouts (treated as unsolvable): {n_timeouts}", flush=True)
 
+    print(
+        f"Mirroring GT benchmark metadata into "
+        f"{OUTPUT_DIR / GT_SUBFOLDER_NAME} ...",
+        flush=True,
+    )
+    mirror_gt_benchmark_subfolder(OUTPUT_DIR)
+
     if not args.no_images:
-        print(f"Copying images to {OUTPUT_DIR / 'images'} ...")
+        print(f"Copying images to {OUTPUT_DIR / 'images'} ...", flush=True)
         copy_images(records, SOURCE_IMAGES_DIR, OUTPUT_DIR / "images")
         n_copied = len(list((OUTPUT_DIR / "images").glob("*.jpeg")))
-        print(f"  {n_copied} images copied")
+        print(f"  {n_copied} images copied", flush=True)
 
     total_elapsed = time.time() - t_start
     print()
@@ -545,6 +625,7 @@ def main() -> None:
     print(f"  {OUTPUT_DIR / 'data.jsonl'}")
     print(f"  {OUTPUT_DIR / 'data.csv'}")
     print(f"  {OUTPUT_DIR / 'README.md'}")
+    print(f"  {OUTPUT_DIR / GT_SUBFOLDER_NAME}/ (GT benchmark mirror)")
     if not args.no_images:
         print(f"  {OUTPUT_DIR / 'images/'}")
 
