@@ -161,7 +161,21 @@ def train(
     model = SudokuCNN().to(device)
     print(f"Parameters: {count_parameters(model):,}")
 
-    criterion = nn.CrossEntropyLoss()
+    # Class 0 (empty cell) is ~7% of the v4.2 training pool, vs ~10.3%
+    # average for classes 1-9 (MNIST 0s were dropped in v4.2 for semantic
+    # correctness — they were digit-zero glyphs, not empty cells). A
+    # straight CrossEntropyLoss under-represents class 0's gradient
+    # contribution relative to its production importance (class 0 is the
+    # empty-vs-filled gate in CNNRecognizer._predict_from_probs). Boost
+    # class 0 by 2x so its effective share of the loss matches the v3
+    # baseline's ~14%. Classes 1-9 stay at 1.0. This mirrors what a
+    # WeightedRandomSampler would do for class 0 oversampling, without
+    # touching the dataset or the random_split indices.
+    class_weights = torch.tensor(
+        [2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        device=device,
+    )
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = CosineAnnealingLR(optimizer, T_max=epochs)
 

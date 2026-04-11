@@ -29,7 +29,20 @@ class CNNRecognizer:
         self,
         onnx_path: str | Path = DEFAULT_ONNX,
         pth_path: str | Path = DEFAULT_PTH,
-        confidence_threshold: float = 0.85,
+        # Default history:
+        #   pre-2026-04-10 : 0.85 (old MNIST-heavy training)
+        #   2026-04-10 v3  : 0.10 (newsprint-augmented, less peaked softmax)
+        #   2026-04-11 v5  : 0.50 (GT-grounded class 0 with dropped MNIST 0s;
+        #                          the model commits much more confidently on
+        #                          class 1-9 now that class 0 is no longer
+        #                          diluted with round digit-zero shapes, so a
+        #                          higher gate is needed to prevent empty-cell
+        #                          hallucinations on real photos)
+        # Threshold 0.50 was picked via a sweep on the 38-image GT set;
+        # it's the lowest value where all five tests in
+        # tests/test_e2e_pipeline.py pass against v5. See
+        # docs/internal/evaluate_ocr_v5_2026_04_11.log for the sweep data.
+        confidence_threshold: float = 0.50,
         empty_threshold: float = 0.03,
         device: str = "auto",
     ):

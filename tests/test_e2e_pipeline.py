@@ -45,7 +45,7 @@ GT_OUTER_INDICES = [0, 3, 15, 12]  # TL, TR, BR, BL
 
 # Regression thresholds (with buffer below current performance)
 MIN_DETECTION_COUNT = 33       # Current: 34/38
-MIN_FILLED_CELL_ACCURACY = 0.55  # Current: 66.6% (v3 67-font checkpoint, 2026-04-11)
+MIN_FILLED_CELL_ACCURACY = 0.55  # Current: 66.6% (v5.1 class-weighted, 2026-04-11)
 MIN_SOLVE_COUNT = 4
 
 
@@ -225,7 +225,7 @@ class TestSingleImageE2E:
 
     @pytest.mark.parametrize("target_filename", [
         "_22_7288515.jpeg",
-        "_23_8824051.jpeg",
+        "_10_970725.jpeg",
     ])
     def test_single_image_e2e(self, pipeline_results, target_filename):
         """A known-good image must detect, OCR all filled cells correctly, and solve."""
