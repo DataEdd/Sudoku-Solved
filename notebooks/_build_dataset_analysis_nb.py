@@ -1122,6 +1122,201 @@ plt.show()
 
 
 # -----------------------------------------------------------------------------
+# 4.8 PrintedDigit sample gallery — raw + augmented
+# -----------------------------------------------------------------------------
+md(
+    """## 4.8 PrintedDigit sample gallery — raw v4.1 render vs fully-augmented
+
+For visual audit of what the current `PrintedDigitDataset` actually
+produces. Two grids:
+
+1. **Raw v4.1 renders.** Uses `PrintedDigitDataset.__getitem__` which
+   returns a sample through `_render_digit` — includes the in-class
+   ±10° rotation, noise, and blur chain but NOT the downstream
+   `AugmentedDataset._apply_noise` + `RandomAffine` + `_apply_newsprint`
+   pipeline. This is what `EmptyCellDataset` and `Chars74KFontDataset`
+   samples look like before augmentation too.
+
+2. **Fully-augmented samples.** The same underlying samples, now passed
+   through `AugmentedDataset(augment=True)` so they go through every
+   transform the training loop actually sees: legacy noise + geometric
+   rotation/translate/scale/shear + newsprint blur + min-max normalize.
+   **This is what the CNN learns from.**
+
+Both grids sample across a mix of bold/condensed (Impact, Arial Black,
+Bodoni 72, Avenir Next Condensed, Rockwell) and regular (Helvetica,
+Times, Courier, SFNS, Georgia) fonts so you can see whether the
+rendering holds up across the full font diversity.
+"""
+)
+
+code(
+    """# Raw sample gallery — use PrintedDigitDataset directly, no AugmentedDataset wrap
+import random as _random
+_random.seed(7)
+
+# Pick 10 fonts spanning bold/condensed + regular
+bold_keywords = ('Impact', 'Arial Black', 'Bodoni 72', 'Avenir Next Condensed',
+                 'Rockwell', 'Helvetica', 'Times', 'Courier', 'SFNS', 'Georgia')
+gallery_fonts = []
+for kw in bold_keywords:
+    for fp in printed.fonts:
+        if kw.lower() in Path(fp).name.lower() and fp not in gallery_fonts:
+            gallery_fonts.append(fp)
+            break
+    if len(gallery_fonts) >= 10:
+        break
+while len(gallery_fonts) < 10 and len(gallery_fonts) < len(printed.fonts):
+    for fp in printed.fonts:
+        if fp not in gallery_fonts:
+            gallery_fonts.append(fp)
+            break
+
+# Render 3 samples per (font, digit) with fresh seeds so we see variation
+def raw_samples_for_font(font_path, samples_per_digit=3, seed=123):
+    '''Render samples via the current _render_digit, bypassing __init__ cache.'''
+    pd = PrintedDigitDataset(count_per_digit=1, seed=seed)  # 9 throwaway samples
+    original_fonts = pd.fonts
+    pd.fonts = [font_path]
+    pd.rng = np.random.RandomState(seed)
+    samples = {}
+    for digit in range(1, 10):
+        samples[digit] = [pd._render_digit(digit) for _ in range(samples_per_digit)]
+    pd.fonts = original_fonts
+    return samples
+
+n_fonts = len(gallery_fonts)
+samples_per_digit = 3
+fig, axes = plt.subplots(
+    n_fonts, 9 * samples_per_digit,
+    figsize=(14, 1.3 * n_fonts),
+)
+
+for row_idx, fp in enumerate(gallery_fonts):
+    fname = Path(fp).stem[:20]
+    font_samples = raw_samples_for_font(fp, samples_per_digit=samples_per_digit, seed=row_idx * 13 + 1)
+    for digit in range(1, 10):
+        for s_idx, arr in enumerate(font_samples[digit]):
+            col = (digit - 1) * samples_per_digit + s_idx
+            ax = axes[row_idx, col]
+            ax.imshow(arr, cmap='gray', vmin=0, vmax=255)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row_idx == 0 and s_idx == 1:
+                ax.set_title(str(digit), fontsize=10)
+            if digit == 1 and s_idx == 0:
+                ax.set_ylabel(fname, fontsize=8, rotation=0,
+                              labelpad=55, va='center')
+
+plt.suptitle(
+    f'PrintedDigitDataset RAW renders (v4.1 big-canvas pipeline)\\n'
+    f'{n_fonts} fonts × 9 digits × {samples_per_digit} samples each — no downstream augmentation',
+    fontsize=11, y=1.002,
+)
+plt.tight_layout()
+plt.show()
+"""
+)
+
+code(
+    """# Fully-augmented sample gallery — wrap PrintedDigit samples through AugmentedDataset
+
+aug_ds = AugmentedDataset(printed, augment=True)
+rng_aug = np.random.RandomState(42)
+
+# Pick 90 random samples — 10 rows × 9 digits columns
+# (we don't control the font here; random sampling across the 4500 pool)
+fig, axes = plt.subplots(10, 9, figsize=(14, 15))
+
+# Find 10 samples per digit class by linear scan
+per_digit_indices = {d: [] for d in range(1, 10)}
+for i in range(len(aug_ds)):
+    _, lbl = aug_ds[i]
+    lbl = int(lbl)
+    if lbl in per_digit_indices and len(per_digit_indices[lbl]) < 10:
+        per_digit_indices[lbl].append(i)
+    if all(len(v) >= 10 for v in per_digit_indices.values()):
+        break
+
+for row_idx in range(10):
+    for col_idx, digit in enumerate(range(1, 10)):
+        idxs = per_digit_indices[digit]
+        if row_idx >= len(idxs):
+            continue
+        tensor, _ = aug_ds[idxs[row_idx]]
+        arr = (tensor.squeeze(0).numpy() * 255).astype(np.uint8)
+        ax = axes[row_idx, col_idx]
+        ax.imshow(arr, cmap='gray', vmin=0, vmax=255)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if row_idx == 0:
+            ax.set_title(f'{digit}', fontsize=11)
+        if col_idx == 0:
+            ax.set_ylabel(f'sample {row_idx}', fontsize=8, rotation=0,
+                          labelpad=40, va='center')
+
+plt.suptitle(
+    'PrintedDigitDataset FULLY-AUGMENTED samples — what the CNN actually trains on\\n'
+    '(noise + geometric rotate/translate/scale/shear + newsprint Gaussian blur + min-max normalize)',
+    fontsize=11, y=1.001,
+)
+plt.tight_layout()
+plt.show()
+"""
+)
+
+code(
+    """# Border-ink rate per font under the current v4.1 render
+import cv2 as _cv2_local
+
+def _border_max_local(img):
+    return max(
+        int(img[0].max()), int(img[-1].max()),
+        int(img[:, 0].max()), int(img[:, -1].max()),
+    )
+
+print(f'Border-ink rate (ink > 100 on any 28x28 border row/col) for all {len(printed.fonts)} fonts:')
+print(f'Metric: fraction of samples where the digit ink touches the tile boundary.')
+print(f'Under v4.1 (big-canvas 56x56 -> resize 28x28), all allowlisted fonts should be at 0%.')
+print()
+
+def _sample_font_one_pass(font_path, samples_per_digit=5, seed=99):
+    pd = PrintedDigitDataset(count_per_digit=1, seed=seed)
+    pd.fonts = [font_path]
+    pd.rng = np.random.RandomState(seed)
+    hits = 0
+    total = 0
+    for d in range(1, 10):
+        for _ in range(samples_per_digit):
+            arr = pd._render_digit(d)
+            if _border_max_local(arr) > 100:
+                hits += 1
+            total += 1
+    return hits, total
+
+rates = []
+for fp in printed.fonts:
+    h, t = _sample_font_one_pass(fp, samples_per_digit=5)
+    rates.append((Path(fp).name, 100 * h / t if t > 0 else 0.0))
+
+# Show any font with > 0% clipping
+nonzero = [(n, r) for n, r in rates if r > 0]
+print(f'Fonts with > 0% border-ink rate: {len(nonzero)} / {len(rates)}')
+if nonzero:
+    print()
+    for name, rate in sorted(nonzero, key=lambda x: -x[1])[:15]:
+        print(f'  {name:<50} {rate:>5.1f}%')
+else:
+    print('✓ No font shows any clipping under v4.1. Clipping is fully eliminated.')
+
+print()
+print(f'Mean rate across fonts: {np.mean([r for _, r in rates]):.2f}%')
+print(f'Max rate across fonts:  {np.max([r for _, r in rates]):.2f}%')
+"""
+)
+
+
+# -----------------------------------------------------------------------------
 # 5. Chars74K font-disjoint verification
 # -----------------------------------------------------------------------------
 md(
