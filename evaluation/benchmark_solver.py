@@ -1,12 +1,21 @@
 """
 Solver latency benchmark.
 
-Runs the production backtracking solver and the simulated-annealing solver
-against the 38 ground-truth Sudoku grids shipped in ``ground_truth.json``.
+Runs the MRV-ordered backtracking solver against every Sudoku grid in
+``ground_truth.json`` and reports the per-call latency distribution.
+Each puzzle is solved 10 times so the per-puzzle median is stable.
 
-Backtracking is fast and deterministic, so each puzzle is solved 10 times and
-per-call latencies are aggregated. Simulated annealing is slow and stochastic,
-so each puzzle is solved once and its success/latency is recorded.
+The harness reports two summaries:
+
+- ``all_runs``: every run across every puzzle, regardless of whether the
+  puzzle itself is internally consistent.
+- ``solvable_runs``: runs for puzzles whose clue digits respect row,
+  column, and box constraints. Puzzles whose transcribed clues violate
+  Sudoku constraints (e.g. duplicate digits in a single row) are
+  correctly rejected by the solver and are excluded from this summary.
+
+``solvable_runs`` is the headline number because it reflects solver
+performance on well-formed inputs.
 
 Usage:
     python -m evaluation.benchmark_solver
@@ -25,13 +34,12 @@ from typing import Any, Dict, List
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.core.solver import backtracking, simulated_annealing
+from app.core.solver import backtracking
 
 GT_PATH = Path(__file__).parent / "ground_truth.json"
 OUTPUT_PATH = Path(__file__).parent / "solver_benchmark_results.json"
 
-BACKTRACKING_RUNS_PER_PUZZLE = 10
-SA_RUNS_PER_PUZZLE = 1
+RUNS_PER_PUZZLE = 10
 
 
 def _coerce_cell(cell: Any) -> int:
@@ -92,9 +100,9 @@ def benchmark_backtracking(puzzles: List[Dict[str, Any]]) -> Dict[str, Any]:
     for entry in puzzles:
         runs_ms: List[float] = []
         all_successful = True
-        for _ in range(BACKTRACKING_RUNS_PER_PUZZLE):
+        for _ in range(RUNS_PER_PUZZLE):
             t0 = time.perf_counter()
-            solution, nodes, success = backtracking(entry["grid"])
+            _, _, success = backtracking(entry["grid"])
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             runs_ms.append(elapsed_ms)
             if not success:
@@ -116,7 +124,7 @@ def benchmark_backtracking(puzzles: List[Dict[str, Any]]) -> Dict[str, Any]:
         )
 
     summary = {
-        "runs_per_puzzle": BACKTRACKING_RUNS_PER_PUZZLE,
+        "runs_per_puzzle": RUNS_PER_PUZZLE,
         "total_runs": len(all_times_ms),
         "all_successful": not failures,
         "failed_paths": failures,
@@ -126,50 +134,6 @@ def benchmark_backtracking(puzzles: List[Dict[str, Any]]) -> Dict[str, Any]:
         "solvable_runs": _summarize(solvable_times_ms) if solvable_times_ms else None,
         "per_puzzle": per_puzzle,
     }
-    return summary
-
-
-def benchmark_simulated_annealing(puzzles: List[Dict[str, Any]]) -> Dict[str, Any]:
-    per_puzzle: List[Dict[str, Any]] = []
-    success_times_ms: List[float] = []
-    all_times_ms: List[float] = []
-    successes = 0
-
-    for entry in puzzles:
-        t0 = time.perf_counter()
-        solution, iters, success = simulated_annealing(entry["grid"])
-        elapsed_ms = (time.perf_counter() - t0) * 1000.0
-        all_times_ms.append(elapsed_ms)
-        if success:
-            successes += 1
-            success_times_ms.append(elapsed_ms)
-        per_puzzle.append(
-            {
-                "path": entry["path"],
-                "success": success,
-                "iterations": iters,
-                "time_ms": round(elapsed_ms, 4),
-            }
-        )
-
-    # Summarize over successful runs if we have any; otherwise over everything.
-    summary_values = success_times_ms if success_times_ms else all_times_ms
-    summary = _summarize(summary_values) if summary_values else {
-        "min_ms": 0.0,
-        "median_ms": 0.0,
-        "mean_ms": 0.0,
-        "p95_ms": 0.0,
-        "max_ms": 0.0,
-    }
-    summary.update(
-        {
-            "runs_per_puzzle": SA_RUNS_PER_PUZZLE,
-            "total_runs": len(puzzles),
-            "successes": successes,
-            "stats_over": "successful_runs" if success_times_ms else "all_runs",
-            "per_puzzle": per_puzzle,
-        }
-    )
     return summary
 
 
@@ -188,9 +152,8 @@ def _print_stats(label: str, stats: Dict[str, float]) -> None:
     )
 
 
-def _print_backtracking_summary(summary: Dict[str, Any]) -> None:
-    print("\n[backtracking]")
-    print(f"  runs_per_puzzle : {summary['runs_per_puzzle']}")
+def _print_summary(summary: Dict[str, Any]) -> None:
+    print(f"\n  runs_per_puzzle : {summary['runs_per_puzzle']}")
     print(f"  total_runs      : {summary['total_runs']}")
     print(f"  puzzles_total   : {summary['puzzles_total']}")
     print(f"  puzzles_solvable: {summary['puzzles_solvable']}")
@@ -205,57 +168,36 @@ def _print_backtracking_summary(summary: Dict[str, Any]) -> None:
         _print_stats("solvable (ms)", summary["solvable_runs"])
 
 
-def _print_sa_summary(summary: Dict[str, Any]) -> None:
-    print("\n[simulated_annealing]")
-    print(f"  runs_per_puzzle : {summary['runs_per_puzzle']}")
-    print(f"  total_runs      : {summary['total_runs']}")
-    print(f"  successes       : {summary['successes']}/{summary['total_runs']}")
-    print(f"  stats_over      : {summary['stats_over']}")
-    print(
-        f"  ms: min={summary['min_ms']:.4f}  median={summary['median_ms']:.4f}  "
-        f"mean={summary['mean_ms']:.4f}  p95={summary['p95_ms']:.4f}  "
-        f"max={summary['max_ms']:.4f}"
-    )
-
-
 def main() -> None:
     puzzles = _load_puzzles()
     print(f"Loaded {len(puzzles)} puzzles from {GT_PATH.name}")
 
     _print_header("Backtracking benchmark")
     bt = benchmark_backtracking(puzzles)
-    _print_backtracking_summary(bt)
-
-    _print_header("Simulated annealing benchmark")
-    sa = benchmark_simulated_annealing(puzzles)
-    _print_sa_summary(sa)
+    _print_summary(bt)
 
     _print_header("Headline")
     headline_stats = bt["solvable_runs"] if bt["solvable_runs"] is not None else bt["all_runs"]
     print(
-        f"  >> Backtracking median latency (solvable subset, "
+        f"  >> Median latency (solvable subset, "
         f"{bt['puzzles_solvable']}/{bt['puzzles_total']} puzzles): "
         f"{headline_stats['median_ms']:.4f} ms"
     )
     print(
-        f"  >> Backtracking median latency (full 38/38, including fast-fail invalid GT): "
+        f"  >> Median latency (full {bt['puzzles_total']}/{bt['puzzles_total']}, "
+        f"including fast-fail invalid GT): "
         f"{bt['all_runs']['median_ms']:.4f} ms"
-    )
-    print(
-        f"  >> SA success rate: {sa['successes']}/{sa['total_runs']} "
-        f"(median {sa['median_ms']:.1f} ms over {sa['stats_over']})"
     )
 
     payload = {
         "command": "python -m evaluation.benchmark_solver",
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "notes": (
-            f"Backtracking run {BACKTRACKING_RUNS_PER_PUZZLE}x per puzzle "
-            f"({BACKTRACKING_RUNS_PER_PUZZLE * len(puzzles)} total); "
-            f"simulated annealing run {SA_RUNS_PER_PUZZLE}x per puzzle. "
+            f"Backtracking run {RUNS_PER_PUZZLE}x per puzzle "
+            f"({RUNS_PER_PUZZLE * len(puzzles)} total). "
             "Multi-value GT cells (lists) are treated as empty (0) for the solver, "
             "since they represent OCR ambiguity not puzzle clues. "
-            "Backtracking reports two summaries: 'all_runs' covers every puzzle, "
+            "Two summaries are produced: 'all_runs' covers every puzzle, "
             "'solvable_runs' excludes GT puzzles whose transcribed clues violate "
             "Sudoku constraints (duplicate digits in a row/col/box) — the solver "
             "correctly rejects those as unsolvable. The solvable-run median is the "
@@ -263,7 +205,6 @@ def main() -> None:
             "inputs."
         ),
         "backtracking": bt,
-        "simulated_annealing": sa,
     }
 
     with open(OUTPUT_PATH, "w") as f:

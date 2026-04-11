@@ -9,12 +9,11 @@ from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.core.extraction import (
-    detect_grid_v2,
+    detect_grid,
     extract_cells,
     find_grid_contour,
     order_points,
     perspective_transform,
-    preprocess_image,
     recognize_cells,
 )
 from app.core.solver import solve
@@ -47,7 +46,7 @@ async def extract_grid(file: UploadFile = File(...)):
             )
 
         # Detection (4-step fallback chain)
-        corners, confidence = detect_grid_v2(image)
+        corners, confidence = detect_grid(image)
 
         if corners is None:
             return ExtractResponse(
@@ -76,13 +75,8 @@ async def extract_grid(file: UploadFile = File(...)):
 
 @router.post("/solve", response_model=SolveResponse)
 async def solve_sudoku(data: SolveRequest):
-    """Solve a Sudoku puzzle.
-
-    Supports backtracking (default, deterministic) and
-    simulated_annealing (probabilistic) methods.
-    """
+    """Solve a Sudoku puzzle via MRV-ordered backtracking."""
     grid = data.grid
-    method = data.method
 
     # Validate puzzle before solving
     valid, errors = validate_puzzle(grid)
@@ -92,23 +86,21 @@ async def solve_sudoku(data: SolveRequest):
             message=f"Invalid puzzle: {'; '.join(errors)}",
         )
 
-    solution, iterations, success, elapsed_ms = solve(grid, method)
+    solution, nodes_explored, success, elapsed_ms = solve(grid)
 
     if success and verify_solution(solution):
         return SolveResponse(
             success=True,
             solution=solution,
-            iterations=iterations,
-            method=method,
+            nodes_explored=nodes_explored,
             solve_time_ms=round(elapsed_ms, 1),
-            message=f"Solved in {iterations} steps ({elapsed_ms:.1f}ms)",
+            message=f"Solved in {nodes_explored} nodes ({elapsed_ms:.1f}ms)",
         )
     else:
         return SolveResponse(
             success=False,
             solution=solution,
-            iterations=iterations,
-            method=method,
+            nodes_explored=nodes_explored,
             solve_time_ms=round(elapsed_ms, 1),
             message="Could not find valid solution.",
         )
@@ -279,12 +271,12 @@ async def debug_pipeline(
     result["confidence_map"] = confidence_map
 
     try:
-        solution, iterations, success, elapsed_ms = solve(grid, "backtracking")
+        solution, nodes_explored, success, elapsed_ms = solve(grid)
         if success and verify_solution(solution):
             result["solution"] = solution
             result["solve_success"] = True
             result["solve_time_ms"] = round(elapsed_ms, 1)
-            result["solve_iterations"] = iterations
+            result["solve_nodes"] = nodes_explored
         else:
             result["solution"] = None
             result["solve_success"] = False

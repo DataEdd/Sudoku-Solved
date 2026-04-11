@@ -1,8 +1,8 @@
 """
 Sudoku Solver - FastAPI server.
 
-Extracts Sudoku puzzles from images using CNN OCR and solves them
-with backtracking or simulated annealing.
+Extracts Sudoku puzzles from images using a custom CNN for digit
+recognition and MRV-ordered backtracking for solving.
 """
 
 from pathlib import Path
@@ -47,7 +47,7 @@ async def health():
     return {
         "status": "ok",
         "ocr": "cnn" if (onnx_available or pth_available) else "tesseract",
-        "solvers": ["backtracking", "simulated_annealing"],
+        "solvers": ["backtracking"],
     }
 
 

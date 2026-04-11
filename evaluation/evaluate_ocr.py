@@ -25,7 +25,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.extraction import (
-    detect_grid_v2,
+    detect_grid,
     extract_cells,
     extract_cells_piecewise,
     order_points,
@@ -99,7 +99,7 @@ def evaluate_single(
     Args:
         image: BGR image
         gt_grid: 9x9 ground truth grid
-        corners: 4 outer corners (if None, runs detect_grid_v2)
+        corners: 4 outer corners (if None, runs detect_grid)
         use_piecewise: Use piecewise warp with center corners
         gt_center_corners: 4 center-box corners for piecewise warp
 
@@ -112,7 +112,7 @@ def evaluate_single(
     }
 
     if corners is None:
-        detected_corners, confidence = detect_grid_v2(image)
+        detected_corners, confidence = detect_grid(image)
         if detected_corners is None:
             return result
         corners = detected_corners
@@ -341,7 +341,7 @@ def main():
     parser.add_argument("--piecewise", action="store_true",
                         help="Compare piecewise vs simple warp (uses GT corners)")
     parser.add_argument("--gt-corners", action="store_true",
-                        help="Use GT corners instead of detect_grid_v2")
+                        help="Use GT corners instead of detect_grid")
     args = parser.parse_args()
 
     if args.piecewise:
@@ -358,7 +358,7 @@ def main():
         )
         print_summary(piecewise_results, "Piecewise Warp (GT Corners)")
     else:
-        mode = "GT corners" if args.gt_corners else "detect_grid_v2"
+        mode = "GT corners" if args.gt_corners else "detect_grid"
         print(f"Running OCR evaluation ({mode})...")
         results = run_evaluation(
             verbose=args.verbose, use_gt_corners=args.gt_corners,

@@ -10,6 +10,8 @@ __pycache__/
 *.py[cod]
 *.so
 .Python
+.pytest_cache/
+.ruff_cache/
 
 # Environment
 .env
@@ -37,8 +39,17 @@ output/
 reports/
 tests/output/
 
+# Internal project notes (not part of public repo)
+docs/internal/
+
+# Notebooks: only the 4 top-level pipeline deep-dive notebooks + README
+# are tracked. All notebooks/<subdir>/ content is local-only (restored from
+# git history for reference; not part of the public repo).
+notebooks/*/
+
 # Large data files
 data/mnist/
+data/chars74k/
 *.ipynb_checkpoints/
 research/
 # CV sync — local notes, never commit

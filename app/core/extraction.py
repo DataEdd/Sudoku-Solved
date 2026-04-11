@@ -1,9 +1,11 @@
 """
 Grid extraction pipeline: detect grid -> perspective transform -> OCR.
 
-Uses hybrid contour detection (95% detection, 5.4px warp accuracy)
-as the primary method. OCR is decoupled via the DigitRecognizer protocol
-in app.core.ocr — swap between Tesseract (legacy) and CNN.
+``detect_grid`` implements a 4-step deterministic fallback chain with
+structure-aware scoring on the first step. OCR is decoupled via the
+``DigitRecognizer`` protocol in ``app.core.ocr`` — a custom CNN is the
+default, with Pytesseract as a fallback when the CNN checkpoint is
+missing.
 """
 
 from typing import List, Optional, Tuple
@@ -12,16 +14,6 @@ import cv2
 import numpy as np
 
 from app.core.ocr import CNNRecognizer, DigitRecognizer, TesseractRecognizer
-
-
-def preprocess_image(image: np.ndarray) -> np.ndarray:
-    """Convert image to binary for grid detection."""
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
-    return thresh
 
 
 def score_quad(
@@ -335,7 +327,7 @@ def infer_center_corners(warped: np.ndarray) -> Optional[np.ndarray]:
 
 
 # ---------------------------------------------------------------------------
-# Structure-aware scoring for detect_grid_v2
+# Structure-aware scoring helpers used by detect_grid's Step 1
 # ---------------------------------------------------------------------------
 
 _WARP_SIZE = 200
@@ -602,12 +594,13 @@ def _refine_corners(
     return refined.reshape(4, 2).astype(np.float32)
 
 
-def detect_grid_v2(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
+def detect_grid(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
     """Detect Sudoku grid using a 4-step deterministic fallback chain.
 
-    Step 1: RETR_TREE + structure-aware scoring (29/38 on GT benchmark).
-            Uses grid_structure and cell_count scoring to prefer quads
-            whose interiors look like a 9x9 grid.
+    Step 1: RETR_TREE + structure-aware scoring. Uses grid_structure and
+            cell_count scoring to prefer quads whose interiors look like
+            a 9x9 grid (targets ~10 evenly spaced line peaks per axis and
+            ~81 cell-sized connected components).
     Step 2: Morph dilate=3/erode=5 fallback — closes broken contours.
     Step 3: Aggressive CLAHE (clip=6, C=7) — enhances faint grids.
     Step 4: Morph dilate=3/erode=3 fallback — closes fragmented lines.
@@ -655,101 +648,6 @@ def detect_grid_v2(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
     quad, area, _ = result
     corners = _refine_corners(gray, quad)
 
-    area_ratio = area / image_area
-    confidence = min(1.0, area_ratio / 0.5) if area_ratio > 0.05 else 0.0
-
-    return corners, confidence
-
-
-def _find_best_quad(
-    thresh: np.ndarray,
-    image_area: int,
-    img_center: np.ndarray,
-    max_dist: float,
-) -> Optional[Tuple[np.ndarray, float, float]]:
-    """Find the best quadrilateral from a binary image.
-
-    Uses the unified scoring: 0.4*area_norm + 0.3*squareness + 0.3*centeredness.
-    Returns (quad_4x2, area, score) or None.
-    """
-    contour = find_grid_contour(thresh)
-    if contour is None:
-        return None
-
-    quad = contour.reshape(4, 2).astype(np.float32)
-    area = cv2.contourArea(contour)
-    # Score with self as max (this path is called per-threshold, so max_area=area)
-    s = score_quad(quad, area, area, img_center, max_dist)
-    return (quad, area, s)
-
-
-def detect_grid(image: np.ndarray) -> Tuple[Optional[np.ndarray], float]:
-    """Hybrid grid detection combining best of contour + sudoku_detector approaches.
-
-    Pipeline:
-    1. CLAHE + adaptive threshold (handles variable lighting)
-    2. Find contours with epsilon=0.02 (preserves quad shapes)
-    3. Filter by area (1-95% of image), approximate to 4 vertices
-    4. Light validation: convexity check only
-    5. Score: primary=area, secondary=centeredness as tiebreaker
-    6. Sub-pixel corner refinement via cv2.cornerSubPix
-
-    Falls back to simple preprocessing (no CLAHE) if CLAHE pipeline finds no quads.
-
-    Args:
-        image: Input BGR image.
-
-    Returns:
-        Tuple of (corners_4x2, confidence). corners is None if detection fails.
-        Corners are ordered [TL, TR, BR, BL].
-    """
-    h, w = image.shape[:2]
-    image_area = h * w
-    img_center = np.array([w / 2, h / 2])
-    max_dist = np.sqrt((w / 2) ** 2 + (h / 2) ** 2)
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    # Primary path: CLAHE + adaptive threshold
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced = clahe.apply(gray)
-    blurred = cv2.GaussianBlur(enhanced, (5, 5), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
-
-    result = _find_best_quad(thresh, image_area, img_center, max_dist)
-
-    # Fallback: simple preprocessing without CLAHE
-    if result is None:
-        blurred_simple = cv2.GaussianBlur(gray, (5, 5), 0)
-        thresh_simple = cv2.adaptiveThreshold(
-            blurred_simple,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            11,
-            2,
-        )
-        result = _find_best_quad(thresh_simple, image_area, img_center, max_dist)
-
-    if result is None:
-        return None, 0.0
-
-    quad, area, _ = result
-
-    # Order corners: TL, TR, BR, BL
-    corners = order_points(quad.reshape(4, 1, 2))
-
-    # Sub-pixel refinement
-    corners_for_subpix = corners.reshape(-1, 1, 2).astype(np.float32)
-    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
-    refined = cv2.cornerSubPix(
-        gray, corners_for_subpix, winSize=(5, 5), zeroZone=(-1, -1), criteria=criteria
-    )
-    corners = refined.reshape(4, 2).astype(np.float32)
-
-    # Confidence based on area ratio
     area_ratio = area / image_area
     confidence = min(1.0, area_ratio / 0.5) if area_ratio > 0.05 else 0.0
 
@@ -810,40 +708,3 @@ def recognize_cells(
     return grid, confidence_map
 
 
-def extract_grid_from_image(
-    image: np.ndarray,
-    recognizer: Optional[DigitRecognizer] = None,
-) -> Optional[List[List[int]]]:
-    """Extract Sudoku grid from image: detect -> warp -> OCR.
-
-    Args:
-        image: Input BGR image.
-        recognizer: DigitRecognizer to use. Falls back to default if None.
-
-    Returns:
-        9x9 grid of ints (0 = empty), or None if detection fails.
-    """
-    thresh = preprocess_image(image)
-    contour = find_grid_contour(thresh)
-
-    if contour is None:
-        return None
-
-    warped = perspective_transform(image, contour)
-    cells = extract_cells(warped)
-
-    grid, _ = recognize_cells(cells, recognizer)
-    return grid
-
-
-# Backward-compatible re-exports for evaluation/benchmark.py
-from app.core.ocr import preprocess_cell as preprocess_cell  # noqa: E402, F401
-from app.core.ocr import TesseractRecognizer as _TR  # noqa: E402
-
-_compat_recognizer = _TR()
-
-
-def recognize_digit(cell: np.ndarray) -> int:
-    """Legacy wrapper — delegates to the default recognizer."""
-    digit, _ = _compat_recognizer.predict(cell)
-    return digit

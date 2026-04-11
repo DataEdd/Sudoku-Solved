@@ -1,29 +1,29 @@
 """
-Sudoku solvers: backtracking (primary) and simulated annealing (secondary).
+Sudoku solver: MRV-ordered backtracking with per-cell domain restriction.
 
-Backtracking uses constraint propagation + recursive search. It's
-deterministic and guaranteed to find a solution if one exists.
-
-Simulated annealing is a probabilistic approach kept as an interesting
-alternative for portfolio demonstration.
+The algorithm is the classical CSP approach described in Kamal, Chawla &
+Goel, "Detection of Sudoku Puzzle using Image Processing and Solving by
+Backtracking, Simulated Annealing and Genetic Algorithms: A Comparative
+Analysis" (ICIIP 2015), extended with the Minimum Remaining Value (MRV)
+heuristic so that each recursive step expands the empty cell with the
+smallest candidate set first. That shrinks the average branching factor
+and prunes dead-end branches earlier than naive row-major expansion.
 """
 
 import asyncio
-import math
-import random
 import time
-from typing import List, Literal, Tuple
-
-import numpy as np
-
-
-# ── Backtracking Solver (Primary) ───────────────────────────────────
+from typing import List, Tuple
 
 
 def backtracking(
     puzzle: List[List[int]],
 ) -> Tuple[List[List[int]], int, bool]:
-    """Solve Sudoku using constraint propagation + backtracking.
+    """Solve a Sudoku puzzle via MRV-ordered backtracking.
+
+    At each recursive step the solver picks the empty cell with the
+    fewest remaining candidates, tries each candidate in turn, and
+    recurses. On a dead end (a cell whose candidate set is empty) it
+    returns False so the parent frame can try the next value.
 
     Args:
         puzzle: 9x9 grid with 0 for empty cells.
@@ -34,10 +34,9 @@ def backtracking(
     grid = [row[:] for row in puzzle]
     nodes = [0]
 
-    # Precompute candidates for each empty cell
     def candidates(r: int, c: int) -> set:
-        used = set(grid[r])  # row
-        used |= {grid[i][c] for i in range(9)}  # col
+        used = set(grid[r])
+        used |= {grid[i][c] for i in range(9)}
         br, bc = 3 * (r // 3), 3 * (c // 3)
         for i in range(br, br + 3):
             for j in range(bc, bc + 3):
@@ -45,7 +44,7 @@ def backtracking(
         return set(range(1, 10)) - used
 
     def solve() -> bool:
-        # Find empty cell with fewest candidates (MRV heuristic)
+        # MRV: pick the empty cell with the fewest candidates
         best, best_cands = None, None
         for i in range(9):
             for j in range(9):
@@ -57,13 +56,13 @@ def backtracking(
                         best = (i, j)
                         best_cands = cands
                         if len(cands) == 1:
-                            break  # can't do better
+                            break  # forced move, no need to keep scanning
             else:
                 continue
             break
 
         if best is None:
-            return True  # all cells filled
+            return True  # grid is full — puzzle solved
 
         r, c = best
         for val in best_cands:
@@ -71,7 +70,7 @@ def backtracking(
             grid[r][c] = val
             if solve():
                 return True
-            grid[r][c] = 0
+            grid[r][c] = 0  # backtrack
 
         return False
 
@@ -79,187 +78,26 @@ def backtracking(
     return grid, nodes[0], success
 
 
-def calculate_energy(grid: np.ndarray, fixed: np.ndarray) -> int:
-    """
-    Calculate the number of conflicts (energy) in the grid.
-
-    Only counts row and column conflicts since boxes are handled
-    by initialization and swap constraints.
-    """
-    conflicts = 0
-
-    # Row conflicts
-    for i in range(9):
-        row = grid[i, :]
-        conflicts += 9 - len(set(row))
-
-    # Column conflicts
-    for j in range(9):
-        col = grid[:, j]
-        conflicts += 9 - len(set(col))
-
-    return conflicts
-
-
-def initialize_grid(puzzle: np.ndarray, fixed: np.ndarray) -> np.ndarray:
-    """
-    Initialize grid by filling empty cells with missing numbers in each 3x3 box.
-
-    Each box will contain all digits 1-9 (no box conflicts).
-    """
-    grid = puzzle.copy()
-
-    for box_row in range(3):
-        for box_col in range(3):
-            r_start = box_row * 3
-            c_start = box_col * 3
-
-            # Get existing numbers in this box
-            existing = set()
-            for i in range(3):
-                for j in range(3):
-                    val = grid[r_start + i, c_start + j]
-                    if val != 0:
-                        existing.add(val)
-
-            # Find missing numbers
-            missing = [x for x in range(1, 10) if x not in existing]
-            random.shuffle(missing)
-
-            # Fill empty cells
-            idx = 0
-            for i in range(3):
-                for j in range(3):
-                    if grid[r_start + i, c_start + j] == 0:
-                        grid[r_start + i, c_start + j] = missing[idx]
-                        idx += 1
-
-    return grid
-
-
-def get_neighbor(grid: np.ndarray, fixed: np.ndarray) -> np.ndarray:
-    """Generate a neighbor by swapping two non-fixed cells in a random 3x3 box."""
-    neighbor = grid.copy()
-
-    # Pick a random 3x3 box
-    box_row = random.randint(0, 2)
-    box_col = random.randint(0, 2)
-    r_start = box_row * 3
-    c_start = box_col * 3
-
-    # Find non-fixed cells in this box
-    non_fixed = []
-    for i in range(3):
-        for j in range(3):
-            r, c = r_start + i, c_start + j
-            if not fixed[r, c]:
-                non_fixed.append((r, c))
-
-    # Need at least 2 non-fixed cells to swap
-    if len(non_fixed) < 2:
-        return neighbor
-
-    # Pick two random cells and swap
-    idx1, idx2 = random.sample(range(len(non_fixed)), 2)
-    r1, c1 = non_fixed[idx1]
-    r2, c2 = non_fixed[idx2]
-
-    neighbor[r1, c1], neighbor[r2, c2] = neighbor[r2, c2], neighbor[r1, c1]
-
-    return neighbor
-
-
-def simulated_annealing(
-    puzzle: List[List[int]],
-    initial_temp: float = 1.0,
-    cooling_rate: float = 0.99999,
-    max_iterations: int = 500000,
-) -> Tuple[List[List[int]], int, bool]:
-    """
-    Solve Sudoku using simulated annealing.
-
-    Args:
-        puzzle: 9x9 grid with 0 for empty cells
-        initial_temp: Starting temperature
-        cooling_rate: Temperature decay rate per iteration
-        max_iterations: Maximum iterations before stopping
-
-    Returns:
-        Tuple of (solution_grid, iterations, success)
-    """
-    puzzle_arr = np.array(puzzle)
-    fixed = puzzle_arr != 0
-
-    # Initialize
-    current = initialize_grid(puzzle_arr, fixed)
-    current_energy = calculate_energy(current, fixed)
-
-    best = current.copy()
-    best_energy = current_energy
-
-    temp = initial_temp
-
-    for iteration in range(max_iterations):
-        if current_energy == 0:
-            return current.tolist(), iteration, True
-
-        neighbor = get_neighbor(current, fixed)
-        neighbor_energy = calculate_energy(neighbor, fixed)
-
-        delta = neighbor_energy - current_energy
-
-        # Accept better solutions or probabilistically accept worse ones
-        if delta < 0 or random.random() < math.exp(-delta / temp):
-            current = neighbor
-            current_energy = neighbor_energy
-
-            if current_energy < best_energy:
-                best = current.copy()
-                best_energy = current_energy
-
-        temp *= cooling_rate
-
-        # Reheat if stuck
-        if iteration % 100000 == 0 and iteration > 0 and best_energy > 0:
-            temp = initial_temp * 0.5
-
-    return best.tolist(), max_iterations, best_energy == 0
-
-
-# ── Unified Interface ────────────────────────────────────────────────
-
-
 def solve(
     puzzle: List[List[int]],
-    method: Literal["backtracking", "simulated_annealing"] = "backtracking",
 ) -> Tuple[List[List[int]], int, bool, float]:
-    """Solve a Sudoku puzzle.
+    """Solve a Sudoku puzzle and return timing.
 
     Args:
         puzzle: 9x9 grid with 0 for empty cells.
-        method: "backtracking" (default, deterministic) or
-                "simulated_annealing" (probabilistic).
 
     Returns:
-        (solution, iterations, success, elapsed_ms)
+        (solution, nodes_explored, success, elapsed_ms)
     """
     t0 = time.time()
-
-    if method == "backtracking":
-        solution, iters, success = backtracking(puzzle)
-    elif method == "simulated_annealing":
-        solution, iters, success = simulated_annealing(puzzle)
-    else:
-        raise ValueError(f"Unknown solver method: {method}")
-
+    solution, nodes, success = backtracking(puzzle)
     elapsed_ms = (time.time() - t0) * 1000
-    return solution, iters, success, elapsed_ms
+    return solution, nodes, success, elapsed_ms
 
 
 async def solve_sudoku_async(
     puzzle: List[List[int]],
-    method: Literal["backtracking", "simulated_annealing"] = "backtracking",
 ) -> Tuple[List[List[int]], int, bool, float]:
     """Async wrapper for solve()."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, solve, puzzle, method)
+    return await loop.run_in_executor(None, solve, puzzle)
