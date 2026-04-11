@@ -149,10 +149,35 @@ def _font_has_distinct_latin_digits(font_path: str, size: int = 20) -> bool:
 
 
 class EmptyCellDataset(Dataset):
-    """Synthetic empty Sudoku cells: blank, noisy, gradient, grid-line remnants.
+    """Synthetic empty Sudoku cells grounded in measured GT statistics.
 
-    These augment the MNIST '0' class so the model learns that empty cells
-    aren't just digit-zero but also blank/textured images.
+    Since 2026-04-11 (v4.2), ``EmptyCellDataset`` is the **sole** source of
+    class 0 samples in the training pool. MNIST handwritten '0' glyphs used
+    to contribute ~5923 mislabeled samples; those were dropped via
+    ``_load_mnist_no_zero`` because they're round digit shapes, not blank
+    newspaper cells. PrintedDigitDataset and Chars74KFontDataset both
+    already skip the digit 0 in their render loops.
+
+    **Target distribution — GT empty cells (pre-normalize, post-invert):**
+
+        mean   p25=38   p50=56   p75=78
+        std    p25=3    p50=8    p75=18
+        p5     p25=29   p50=44   p75=70
+        p95    p25=55   p50=82   p75=105
+        lap_var p25=20  p50=97   p75=425
+
+    (Measured on 1358 real empty cells from 38 GT newspaper photos via
+    ``notebooks/gt_cell_measurement.py``; the frozen stats live at
+    ``notebooks/gt_cell_stats.json:gt_empty``.)
+
+    Pre-v4.2 the four variants all had mean ~5, p5=0, p95=16 — ~50 points
+    darker than GT. Synthetic samples were modelling "ideal pure-white
+    paper" (= near-black in MNIST polarity), not real off-white newsprint
+    paper. Post-v4.2 the four variants target the GT distribution above.
+    All four are in MNIST polarity (white-ish digit / bright features on
+    dark-ish paper background); random bright features represent what
+    survives of grid lines or faint ink residues after the production
+    invert + normalize pipeline.
     """
 
     def __init__(self, count: int = 5000, size: int = 28, seed: int = 42):
@@ -168,45 +193,145 @@ class EmptyCellDataset(Dataset):
         tensor = torch.from_numpy(img).unsqueeze(0).float() / 255.0
         return tensor, 0
 
+    def _smooth_noise(self, std: float, s: int) -> np.ndarray:
+        """Generate spatially-correlated Gaussian noise matching paper texture.
+
+        Pixel-independent ``rng.normal`` noise has very high spatial frequency
+        (every pixel is an independent sample), so ``cv2.Laplacian(...).var()``
+        on the resulting image is ~400-500 for std 5 — far above the measured
+        GT empty-cell laplacian variance of ~97. Real paper texture is
+        spatially correlated at the 2-3 px scale; simulating that needs a
+        smoothed noise field. We generate white noise at the target size,
+        blur it with a small Gaussian (σ ≈ 1.2 px — enough to correlate
+        neighbours without losing all structure), then rescale to the
+        target std so the distribution's magnitude matches regardless of
+        the blur's energy loss.
+        """
+        import cv2
+        noise = self.rng.normal(0, 1, (s, s)).astype(np.float32)
+        noise = cv2.GaussianBlur(noise, (0, 0), sigmaX=1.2)
+        cur_std = float(noise.std())
+        if cur_std > 1e-6:
+            noise = noise * (std / cur_std)
+        return noise
+
     def _generate(self, idx: int) -> np.ndarray:
-        choice = idx % 4
+        """Generate one empty-cell sample matching GT pre-normalize stats.
+
+        Four variants, selected by ``idx % 4``:
+          0. **Clean paper** — uniform base + spatially-correlated noise
+          1. **Lighting gradient** — base + shallow spatial gradient
+          2. **Grid-line remnant** — base + a brighter line at one edge
+             (a grid line that survived the inner-10% margin crop and
+             became bright after MNIST-polarity invert)
+          3. **Faint ink residue** — base + a small brighter blob (a cell
+             that has been partially erased or bleed-through from a
+             neighbour)
+
+        All four use ``_smooth_noise`` for the texture component rather
+        than pixel-independent Gaussian noise, matching the GT laplacian
+        variance of ~97 (pre-pipeline) rather than the ~400+ produced by
+        white noise.
+        """
         s = self.size
+        choice = idx % 4
+
+        # Paper base intensity — matches GT empty cell mean (~56) with
+        # natural variation across the p25-p75 range (38-78).
+        base = int(self.rng.randint(40, 75))
+
         if choice == 0:
-            return np.zeros((s, s), dtype=np.uint8)
-        elif choice == 1:
-            level = self.rng.randint(5, 30)
-            return self.rng.randint(0, level, (s, s)).astype(np.uint8)
-        elif choice == 2:
-            end = self.rng.randint(10, 40)
-            grad = np.linspace(0, end, s, dtype=np.float32)
-            if idx % 2 == 0:
-                return np.tile(grad, (s, 1)).astype(np.uint8)
-            return np.tile(grad.reshape(-1, 1), (1, s)).astype(np.uint8)
-        else:
-            img = np.zeros((s, s), dtype=np.uint8)
-            t = self.rng.randint(1, 3)
-            b = self.rng.randint(30, 80)
-            for edge in range(4):
-                if self.rng.random() < 0.5:
-                    if edge == 0:
-                        img[:t, :] = b
-                    elif edge == 1:
-                        img[-t:, :] = b
-                    elif edge == 2:
-                        img[:, :t] = b
-                    else:
-                        img[:, -t:] = b
-            return img
+            # Clean paper: uniform base + spatially-smoothed paper noise.
+            # Wider base range + wider noise std range than v4.2 pre-audit
+            # so two clean-paper samples with similar seeds don't end up
+            # near-identical (the variation check flagged 31% near-duplicate
+            # pairs when base was 40-75 and noise std was 3-6 fixed).
+            wide_base = float(base) + float(self.rng.uniform(-8, 8))
+            img = np.full((s, s), wide_base, dtype=np.float32)
+            img += self._smooth_noise(self.rng.uniform(3.0, 10.0), s)
+            return np.clip(img, 0, 255).astype(np.uint8)
+
+        if choice == 1:
+            # Lighting gradient: paper base + spatial gradient across one axis
+            # (widened span range for more diversity), plus texture noise
+            # with variable strength.
+            span = int(self.rng.randint(-25, 26))
+            grad = np.linspace(base, base + span, s, dtype=np.float32)
+            if self.rng.random() < 0.5:
+                img = np.tile(grad, (s, 1)).astype(np.float32)
+            else:
+                img = np.tile(grad.reshape(-1, 1), (1, s)).astype(np.float32)
+            img += self._smooth_noise(self.rng.uniform(2.0, 5.0), s)
+            return np.clip(img, 0, 255).astype(np.uint8)
+
+        if choice == 2:
+            # Grid-line remnant: paper base with a brighter edge line.
+            # After the original white-paper-on-black-grid cell gets
+            # inverted to MNIST polarity, leftover grid-line pixels near
+            # the border appear as brighter ink-like strokes. Width 1-3
+            # px, intensity ~70-140 (p75-p95 range of GT empty cells).
+            img = np.full((s, s), base, dtype=np.float32)
+            img += self._smooth_noise(3.5, s)
+            line_intensity = int(self.rng.randint(70, 140))
+            line_width = int(self.rng.randint(1, 4))
+            edge = int(self.rng.randint(4))
+            if edge == 0:
+                img[:line_width, :] = line_intensity
+            elif edge == 1:
+                img[-line_width:, :] = line_intensity
+            elif edge == 2:
+                img[:, :line_width] = line_intensity
+            else:
+                img[:, -line_width:] = line_intensity
+            return np.clip(img, 0, 255).astype(np.uint8)
+
+        # choice == 3: paper with a faint ink residue
+        # Small brighter blob placed at one of the four tile corners/edges,
+        # never at the tile centre. A centred blob would look like a digit
+        # "0"/"O" to the variation-check heuristic and structurally to the
+        # CNN — we explicitly want class 0 to never contain centred round
+        # clusters. The blob sits at a randomised near-corner so the
+        # centroid is always > 8 px from (14, 14).
+        img = np.full((s, s), base, dtype=np.float32)
+        img += self._smooth_noise(3.5, s)
+        # Four corner quadrants; pick one and place the blob inside it.
+        quadrant = int(self.rng.randint(4))
+        cx_min, cx_max = (3, 10) if quadrant in (0, 2) else (18, 25)
+        cy_min, cy_max = (3, 10) if quadrant in (0, 1) else (18, 25)
+        cx = int(self.rng.randint(cx_min, cx_max))
+        cy = int(self.rng.randint(cy_min, cy_max))
+        r = int(self.rng.randint(2, 5))  # slightly smaller than before
+        yy, xx = np.ogrid[:s, :s]
+        blob_mask = (yy - cy) ** 2 + (xx - cx) ** 2 < r * r
+        blob_intensity = int(self.rng.randint(70, 110))
+        img[blob_mask] = blob_intensity
+        return np.clip(img, 0, 255).astype(np.uint8)
 
 
 class PrintedDigitDataset(Dataset):
-    """Synthetic printed digits rendered from system fonts.
+    """Synthetic printed digits rendered from 67 validated system fonts.
 
-    Generates digit images (1-9) in various fonts at 28x28, white-on-black,
-    matching the MNIST format. Covers the printed digit domain that MNIST
-    (handwritten only) misses.
+    Generates digit images (1-9) in various macOS/Linux Latin fonts at 28×28,
+    white-on-black, matching the MNIST format. Covers the printed digit
+    domain that MNIST (handwritten only) misses.
 
     Class 0 is not generated here — empty cells are handled by EmptyCellDataset.
+
+    **Rendering (post-2026-04-11 v4.1 fix):** digits are rendered on a 56×56
+    intermediate canvas at font sizes 32-48 (2× the final output), all in-class
+    augmentation (±10° rotation, additive Gaussian noise, 3×3 Gaussian blur)
+    is applied on the 56×56 canvas, and the final step is a ``cv2.resize`` to
+    28×28 via ``INTER_AREA``. The big-canvas approach eliminates a clipping
+    bug present in all pre-v4.1 checkpoints: rendering at the final 28×28
+    size on wide/bold fonts (Impact, Arial Black, Bodoni 72, Rockwell, Avenir
+    Next Condensed) or after rotation would push glyph ink past the tile
+    boundary, producing training samples with partial digits. The v4 attempt
+    to drop this dataset entirely (removing all 67 macOS-specific fonts) was
+    reverted after measuring a −5.6 filled-cell regression on real photos;
+    Chars74K's 812-font English-Font archive does NOT subsume the macOS
+    system fonts for classes 2/4/6. See
+    ``memory/project_v4_drop_printed_2026_04_11.md`` for the v3 → v4 → v4.1
+    measurement trail.
     """
 
     def __init__(
@@ -264,43 +389,75 @@ class PrintedDigitDataset(Dataset):
                 self.labels.append(digit)
 
     def _render_digit(self, digit: int) -> np.ndarray:
-        from PIL import Image, ImageDraw, ImageFont
+        """Render a single digit sample via the 2026-04-11 v4.1 big-canvas pattern.
 
-        s = self.size
-        img = Image.new("L", (s, s), 0)
+        Pipeline:
+          1. Render the glyph onto a 56×56 PIL canvas at font size 32-48
+             (2× the target 28×28 final size).
+          2. Centre via textbbox measurement + bbox offset correction + ±4 px
+             jitter (2× the old ±2 px to match the 2× canvas).
+          3. Apply in-class augmentation (±10° rotation, additive noise, 3×3
+             blur) on the 56×56 canvas so rotation/affine steps have 4× the
+             pixel headroom before clipping.
+          4. ``cv2.resize`` to 28×28 via ``INTER_AREA`` (the standard for
+             downsizing; anti-aliases by pixel-area averaging).
+
+        The pre-v4.1 implementation rendered directly on 28×28 at font sizes
+        16-24 with ±2 px jitter, which clipped wide/bold fonts after rotation
+        or when the downstream ``AugmentedDataset`` geometric chain applied
+        its ±15° rotation + (0.85, 1.15) scale + 8% translate. The v4.1
+        big-canvas approach eliminates that bug without changing the overall
+        digit-with-margin distribution the model sees at inference.
+        """
+        from PIL import Image, ImageDraw, ImageFont
+        import cv2
+
+        s = self.size            # 28 — final output size
+        big_s = s * 2            # 56 — render canvas (2× headroom for augmentation)
+
+        img = Image.new("L", (big_s, big_s), 0)
         draw = ImageDraw.Draw(img)
 
         # Random font and size. self.fonts is guaranteed non-empty and
         # every entry is a validated Latin-digit-rendering font.
         fp = self.fonts[self.rng.randint(len(self.fonts))]
-        font_size = self.rng.randint(16, 24)
+        font_size = self.rng.randint(32, 48)  # 2× the old 16-24 range
         font = ImageFont.truetype(fp, font_size)
 
         text = str(digit)
         bbox = draw.textbbox((0, 0), text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-        # Center with slight random offset
-        x = (s - tw) // 2 + self.rng.randint(-2, 3)
-        y = (s - th) // 2 + self.rng.randint(-2, 3)
+        # Centre the ink inside the big canvas. ``textbbox`` returns pen-start
+        # coordinates, not ink-start coordinates, so we subtract ``bbox[0]``
+        # and ``bbox[1]`` to position the ink box's top-left at the intended
+        # centred location. Jitter is ±4 px on the 56×56 canvas, matching the
+        # old ±2 px on the 28×28 canvas after the downsize.
+        x = (big_s - tw) // 2 - bbox[0] + int(self.rng.randint(-4, 5))
+        y = (big_s - th) // 2 - bbox[1] + int(self.rng.randint(-4, 5))
         draw.text((x, y), text, fill=255, font=font)
 
         arr = np.array(img)
 
-        # Random augmentation
+        # Random augmentation — all on the 56×56 canvas so rotation corners
+        # don't clip glyph ink.
         if self.rng.random() < 0.3:
-            import cv2
             angle = self.rng.uniform(-10, 10)
-            M = cv2.getRotationMatrix2D((s / 2, s / 2), angle, 1.0)
-            arr = cv2.warpAffine(arr, M, (s, s))
+            M = cv2.getRotationMatrix2D((big_s / 2, big_s / 2), angle, 1.0)
+            arr = cv2.warpAffine(arr, M, (big_s, big_s))
 
         if self.rng.random() < 0.2:
             noise = self.rng.normal(0, 8, arr.shape)
             arr = np.clip(arr.astype(np.float32) + noise, 0, 255).astype(np.uint8)
 
         if self.rng.random() < 0.2:
-            import cv2
             arr = cv2.GaussianBlur(arr, (3, 3), 0)
+
+        # Final step: downsize 56×56 → 28×28 via INTER_AREA. This preserves
+        # the "digit sits inside the tile with whitespace margin" distribution
+        # that matches what the inference ``CNNRecognizer._preprocess`` chain
+        # produces after its inner-10% margin crop + resize.
+        arr = cv2.resize(arr, (s, s), interpolation=cv2.INTER_AREA)
 
         return arr
 
@@ -581,26 +738,39 @@ class AugmentedDataset(Dataset):
 
         The inference preprocessing min-max-normalizes every cell, so this
         augmentation mirrors the full preprocessing chain: Gaussian blur
-        then min-max normalize. Once the normalize step is included,
-        scale/pedestal parameters are redundant (MinMax erases any additive
-        or multiplicative shift of the input), so the only tunable parameter
-        is sigma — and the sigma range was tuned against the target
-        laplacian variance (2374) via a grid sweep.
+        → min-max normalize → **pedestal shift**. The sigma range was
+        tuned against the target laplacian variance (2374) via a grid
+        sweep.
 
-        Measured at sigma ∈ [0.5, 0.8]:
+        **2026-04-11 (v4):** added the post-normalize pedestal step.
+        Pre-v4 measurement showed train p5=0 vs GT p5=9 — training samples
+        had pure-black backgrounds after min-max, while real newspaper
+        cells retain a ~9-level pedestal from paper tone. The pedestal
+        range [5, 15] is grounded in the GT postnorm p5 distribution
+        (p25=7, p50=9, p75=13 from notebooks/gt_cell_stats.json under
+        gt_filled_postnorm.p5). BatchNorm was previously absorbing the
+        gap but the model had also learnt the shortcut "p5=0 → empty
+        cell", which contributed to empty-cell hallucinations on real
+        photos (memory/lesson_newsprint_match_partial.md).
+
+        Measured at sigma ∈ [0.5, 0.8] pre-pedestal (v3):
             mean=34, p5=0, p95=218, p95-p5=218, lap_var=2594
 
-        The mean and p5 are systematically lower than the GT target because
-        raw synthetic samples have more pure-black background pixels than
-        real newspaper cells (where paper is around gray 50-100 post-invert).
-        BatchNorm absorbs the mean shift. The lap_var and p95 match the GT
-        interquartile range (p25-p75 = 1460-3680 for GT filled lap_var).
+        Measured post-pedestal (v4, expected — verify post-retrain):
+            mean≈44, p5≈10, p95≈228, p95-p5≈218, lap_var≈2594
+
+        The pedestal adds an additive offset but does not change the
+        high-frequency content, so laplacian variance is unaffected.
         """
         import cv2
 
         sigma = random.uniform(0.5, 0.8)
         img = cv2.GaussianBlur(img, (0, 0), sigmaX=sigma)
         img = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX)
+        # L2 pedestal shift was tested on 2026-04-11 and reverted —
+        # it caused a real-photo regression alongside the drop-PrintedDigit
+        # change. Bisection kept drop-PrintedDigit, reverted L2. See
+        # memory/project_v4_drop_printed_2026_04_11.md for the numbers.
         return img
 
 
@@ -614,19 +784,58 @@ def _load_mnist(train: bool) -> Dataset:
     )
 
 
+def _load_mnist_no_zero(train: bool) -> Dataset:
+    """Load MNIST, then drop every sample labelled 0.
+
+    **Why:** class 0 in this project means "empty cell", NOT the digit zero.
+    MNIST's ~5923 handwritten '0' glyphs in the train split (and ~980 in the
+    test split) are round digit-shaped images that semantically belong to
+    *no* Sudoku class — Sudoku cells only ever contain blanks or digits 1-9.
+    Including them in class 0 pollutes the empty-cell label with high-ink
+    round shapes, teaching the model that "class 0 = (blank) OR (a round
+    digit)". That's a semantic contradiction with the production inference
+    contract, which uses the class-0 probability only as an empty-vs-filled
+    gate.
+
+    This helper returns a ``torch.utils.data.Subset`` that excludes every
+    label-0 sample. ``PrintedDigitDataset`` and ``Chars74KFontDataset``
+    already skip the digit-0 glyph by construction (their inner loops
+    iterate ``range(1, 10)``); the filter here closes the last remaining
+    source of "digit-zero" samples that were leaking into class 0.
+    """
+    base = datasets.MNIST(
+        root=DATA_DIR,
+        train=train,
+        download=True,
+        transform=transforms.ToTensor(),
+    )
+    targets = base.targets
+    if hasattr(targets, "numpy"):
+        targets = targets.numpy()
+    else:
+        targets = np.asarray(targets)
+    keep_indices = [int(i) for i in np.where(targets != 0)[0]]
+    return torch.utils.data.Subset(base, keep_indices)
+
+
 def create_datasets(
     empty_cell_count: int = 5000,
     seed: int = 42,
 ) -> Tuple[Dataset, Dataset, Dataset]:
     """Create train/val/test datasets for the SudokuCNN digit recogniser.
 
-    Composition (post-2026-04-10 redesign):
+    Composition (post-2026-04-11 v4.2):
 
       Train:
-        - MNIST train (60k) — handwritten digits 0-9
-        - EmptyCellDataset (~5k) — synthetic empty cell variants
-        - PrintedDigitDataset — system-font printed digits 1-9 from
-          validated Latin fonts only (see LATIN_FONT_ALLOWLIST)
+        - MNIST train MINUS label 0 (~54k) — handwritten digits 1-9. The
+          ~5923 MNIST '0' glyphs are dropped because they're round digit
+          shapes, not blank cells — class 0 in this project means "empty
+          cell", not "digit zero". See _load_mnist_no_zero docstring.
+        - EmptyCellDataset (~5k) — synthetic empty cell variants, rewritten
+          in v4.2 to match the GT pre-normalize distribution (mean ~56,
+          std ~8, paper pedestal p5 ~44). Source of ALL class 0 samples.
+        - PrintedDigitDataset (~4.5k) — macOS/Linux system-font printed
+          digits 1-9 from 67 validated Latin fonts (see LATIN_FONT_ALLOWLIST)
         - Chars74KFontDataset(split="train") — ~7.3k printed digits 1-9
           rendered from ~800 unique computer fonts (font-disjoint from test)
 
@@ -634,18 +843,38 @@ def create_datasets(
         - 10% holdout from the concatenated train pool (same composition)
 
       Test:
-        - MNIST test (10k)
-        - EmptyCellDataset test split (1k)
+        - MNIST test MINUS label 0 (~9k) — same rationale as train
+        - EmptyCellDataset test split (1k) — the sole class 0 test source
         - Chars74KFontDataset(split="test") — ~1.8k printed digits 1-9
-          from ~200 fonts DISJOINT from the train split. This is the first
-          version of the test split that actually measures printed-digit
-          generalisation — prior versions only had handwritten + empty.
+          from ~200 fonts DISJOINT from the train split.
+
+    **2026-04-11 history (v4 and v4.1):**
+
+    v4 (dropped, not shipped) removed PrintedDigitDataset from training
+    because the 28×28 render canvas was clipping wide/bold font glyphs.
+    The retrain caused a measured −5.6 filled-cell regression on real
+    photos (66.6% → 61.0%) — Chars74K's 812-font archive did NOT subsume
+    the 67 macOS-specific bold/condensed fonts (Impact, Arial Black,
+    Bodoni 72, Rockwell, Avenir Next Condensed, SFNS variants). Classes
+    2, 4, and 6 were hit hardest, each losing ~13 percentage points.
+
+    v4.1 fixes the clipping in place: ``PrintedDigitDataset._render_digit``
+    now renders on a 56×56 canvas at font sizes 32-48, applies the
+    in-class rotation / noise / blur augmentation on the big canvas, and
+    resizes to 28×28 via INTER_AREA at the end. This eliminates the
+    affine-induced clipping while preserving the "digit-with-margin"
+    distribution that matches the inference pipeline's post-margin-crop
+    output. See ``memory/project_v4_drop_printed_2026_04_11.md`` for the
+    full v3 → v4 → v4.1 measurement trail.
 
     The train split is wrapped with augmentation that matches the empirical
-    distribution of the 38 GT newspaper cells (blur + contrast compression +
-    brightness pedestal); see AugmentedDataset._apply_newsprint for details.
-    Val and test pass through unaugmented so they remain reproducible and
-    directly comparable to historical checkpoint numbers.
+    distribution of the 38 GT newspaper cells (blur + min-max normalize);
+    see AugmentedDataset._apply_newsprint for details. Val and test pass
+    through unaugmented so they remain reproducible and directly comparable
+    to historical checkpoint numbers; the **augmented** eval distribution
+    is measured separately in train.py by re-wrapping ``val_ds.base`` and
+    ``test_ds.base`` with ``AugmentedDataset(augment=True)`` (L1 from the
+    2026-04-11 pipeline review).
 
     The 38 GT newspaper photos are intentionally NOT in any of these splits
     — they remain held-out real-photo evaluation via evaluate_ocr.py, per
@@ -654,7 +883,8 @@ def create_datasets(
     rng = torch.Generator().manual_seed(seed)
 
     # Synthetic sources that go into BOTH train and val (split later).
-    mnist_train = _load_mnist(train=True)
+    # MNIST is filtered to drop label 0 (see _load_mnist_no_zero).
+    mnist_train = _load_mnist_no_zero(train=True)
     empty_train = EmptyCellDataset(count=empty_cell_count, seed=seed)
     printed_train = PrintedDigitDataset(count_per_digit=500, seed=seed)
     chars74k_train = Chars74KFontDataset(split="train", seed=seed)
@@ -674,10 +904,14 @@ def create_datasets(
     train_ds = AugmentedDataset(train_subset, augment=True)
     val_ds = AugmentedDataset(val_subset, augment=False)
 
-    # Test split: MNIST test + held-out empty cells + FONT-DISJOINT Chars74K
-    # test split (the first version of this dataset that actually measures
-    # generalisation to unseen printed-digit fonts).
-    mnist_test = _load_mnist(train=False)
+    # Test split: MNIST test MINUS label 0 + held-out empty cells + font-
+    # disjoint Chars74K test split. The "first version of the dataset that
+    # actually measures generalisation to unseen printed-digit fonts" is
+    # preserved; the label-0 filter only removes handwritten-0 glyphs from
+    # the test MNIST half, which aren't a meaningful test signal anyway
+    # (the production pipeline never predicts class 0 directly — it uses
+    # the class-0 probability as an empty-vs-filled gate).
+    mnist_test = _load_mnist_no_zero(train=False)
     empty_test = EmptyCellDataset(count=1000, seed=seed + 1)
     chars74k_test = Chars74KFontDataset(split="test", seed=seed)
     test_ds = AugmentedDataset(

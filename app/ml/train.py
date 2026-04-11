@@ -19,7 +19,7 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
-from app.ml.dataset import create_datasets
+from app.ml.dataset import AugmentedDataset, create_datasets
 from app.ml.model import SudokuCNN, count_parameters
 
 CHECKPOINT_DIR = Path("app/ml/checkpoints")
@@ -134,7 +134,28 @@ def train(
     test_loader = DataLoader(
         test_ds, batch_size=batch_size, shuffle=False, num_workers=0
     )
-    print(f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}")
+
+    # L1 (2026-04-11): also build augmented val/test splits for realistic-
+    # distribution reporting. val_ds.base is a Subset, test_ds.base is a
+    # ConcatDataset — both Dataset instances, so wrapping them in a second
+    # AugmentedDataset(augment=True) reuses the exact same samples through the
+    # full _apply_noise + geometric + _apply_newsprint chain. Checkpoint
+    # selection keeps using the clean val split for backward compatibility
+    # with historical v2/v3 numbers; the augmented split is only used for the
+    # end-of-training reporting pass.
+    val_aug_ds = AugmentedDataset(val_ds.base, augment=True)
+    test_aug_ds = AugmentedDataset(test_ds.base, augment=True)
+    val_aug_loader = DataLoader(
+        val_aug_ds, batch_size=batch_size, shuffle=False, num_workers=0
+    )
+    test_aug_loader = DataLoader(
+        test_aug_ds, batch_size=batch_size, shuffle=False, num_workers=0
+    )
+
+    print(
+        f"Train: {len(train_ds)}, Val: {len(val_ds)}, Test: {len(test_ds)}  "
+        f"(+Val_aug: {len(val_aug_ds)}, Test_aug: {len(test_aug_ds)} — L1 realistic splits)"
+    )
 
     # Model
     model = SudokuCNN().to(device)
@@ -206,22 +227,36 @@ def train(
     total_time = time.time() - start_time
     print(f"\nTraining complete in {total_time:.1f}s")
 
-    # Load best model and evaluate on test set
+    # Load best model and evaluate on test set (BOTH clean + augmented — L1)
     checkpoint = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=True)
     model.load_state_dict(checkpoint["model_state_dict"])
-    test_loss, test_acc = evaluate(model, test_loader, criterion, device)
-    print(f"Test accuracy: {test_acc:.4f} (loss: {test_loss:.4f})")
 
-    # Confusion matrix
+    test_loss, test_acc = evaluate(model, test_loader, criterion, device)
+    test_loss_aug, test_acc_aug = evaluate(model, test_aug_loader, criterion, device)
+
+    print(
+        f"Test accuracy (clean, backward-compat metric):   "
+        f"{test_acc:.4f}  (loss: {test_loss:.4f})"
+    )
+    print(
+        f"Test accuracy (augmented, realistic proxy — L1): "
+        f"{test_acc_aug:.4f}  (loss: {test_loss_aug:.4f})"
+    )
+    print(
+        f"  Δ (clean − augmented): {test_acc - test_acc_aug:+.4f}   "
+        f"— the gap measures synthetic→realistic-distribution generalization"
+    )
+
+    # Confusion matrix (on clean test split for comparability with v2/v3)
     cm = compute_confusion_matrix(model, test_loader, device)
-    print("\nConfusion Matrix:")
+    print("\nConfusion Matrix (clean test split):")
     labels = [" 0", " 1", " 2", " 3", " 4", " 5", " 6", " 7", " 8", " 9"]
     print("     " + "  ".join(labels))
     for i, row in enumerate(cm):
         print(f"  {i}: " + "  ".join(f"{v:3d}" for v in row))
 
-    # Per-class accuracy
-    print("\nPer-class accuracy:")
+    # Per-class accuracy (clean split)
+    print("\nPer-class accuracy (clean test split):")
     for i in range(10):
         total = cm[i].sum()
         correct = cm[i][i]
@@ -234,6 +269,9 @@ def train(
         "best_val_acc": float(best_val_acc),
         "test_acc": float(test_acc),
         "test_loss": float(test_loss),
+        # L1: augmented (realistic) eval for future checkpoint-comparison metrics
+        "test_acc_aug": float(test_acc_aug),
+        "test_loss_aug": float(test_loss_aug),
         "total_time_s": round(total_time, 1),
         "parameters": count_parameters(model),
         "history": history,

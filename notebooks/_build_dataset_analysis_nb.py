@@ -65,7 +65,8 @@ of the training data that feeds `app/ml/train.py`. It answers:
 3. **Is the label quality clean?** Two-stage font filter audit + visual check
    on both accepted and rejected fonts.
 4. **Do the samples look right?** One-per-digit sanity grid across MNIST,
-   `PrintedDigitDataset`, and `Chars74KFontDataset`.
+   `PrintedDigitDataset` (historical, deprecated 2026-04-11), and
+   `Chars74KFontDataset`.
 5. **Is the test split honest?** Chars74K train/test font-disjoint assertion.
 6. **Does the training distribution match real inference inputs?** Measured
    GT newspaper cell statistics (from `notebooks/gt_cell_measurement.py`) vs
@@ -82,11 +83,16 @@ training split. Their cells are used here only for *measuring* the target
 distribution the augmentation should match. Every plot in section 6 is of a
 read-only statistic file, not of model predictions on GT cells.
 
-**Upstream pipeline:** `app/ml/dataset.py::create_datasets` concatenates MNIST
-+ `EmptyCellDataset` + `PrintedDigitDataset` + `Chars74KFontDataset`. The
-training-time augmentation (geometric + newsprint) is in `AugmentedDataset`.
-The newsprint augmentation parameters were tuned against the GT distribution
-by the inline sweep harness used during the 2026-04-10 redesign.
+**Upstream pipeline (post-2026-04-11 v4):** `app/ml/dataset.py::create_datasets`
+concatenates MNIST + `EmptyCellDataset` + `Chars74KFontDataset`. The
+training-time augmentation (noise + geometric + newsprint + **pedestal L2**)
+is in `AugmentedDataset`. `PrintedDigitDataset` was dropped from training in
+v4 (2026-04-11) because its 28×28 render canvas was clipping wide/bold font
+glyphs after the downstream geometric augmentation; Chars74K's bbox-crop →
+pad → resize preprocessing avoids clipping by construction. The newsprint
+augmentation parameters were tuned against the GT distribution by the inline
+sweep harness used during the 2026-04-10 redesign; the pedestal shift added
+in v4 closes the measured `p5=0` vs GT `p5=9` gap.
 """
 )
 
@@ -141,7 +147,8 @@ from app.ml.dataset import (
     PrintedDigitDataset,
     _font_has_distinct_latin_digits,
     _is_latin_allowlisted_font,
-    _load_mnist,
+    _load_mnist,            # kept for historical-comparison use in §4
+    _load_mnist_no_zero,    # the filtered MNIST used by create_datasets since v4.2
     create_datasets,
 )
 
@@ -160,31 +167,36 @@ code(
     """# Build the combined splits and the individual sources side-by-side.
 train_ds, val_ds, test_ds = create_datasets()
 
-mnist_train   = _load_mnist(train=True)
-mnist_test    = _load_mnist(train=False)
+mnist_train   = _load_mnist_no_zero(train=True)   # v4.2 filter — drops ~5923 handwritten '0' glyphs
+mnist_test    = _load_mnist_no_zero(train=False)  # v4.2 filter — drops ~980 from test
 empty_train   = EmptyCellDataset(count=5000, seed=42)
-printed       = PrintedDigitDataset()
+printed       = PrintedDigitDataset()  # historical; not in training pool since v4 (2026-04-11)
 chars74k_tr   = Chars74KFontDataset(split='train')
 chars74k_te   = Chars74KFontDataset(split='test')
 
-print('--- Combined splits ---')
+print('--- Combined splits (post-v4) ---')
 print(f'train  : {len(train_ds):>6,} samples')
 print(f'val    : {len(val_ds):>6,} samples')
 print(f'test   : {len(test_ds):>6,} samples')
 print(f'total  : {len(train_ds) + len(val_ds) + len(test_ds):>6,} samples')
 
 print()
-print('--- Individual sources ---')
-rows = [
+print('--- Sources in the current training pool ---')
+rows_in_pool = [
     ('MNIST train',                 len(mnist_train),  '—'),
     ('MNIST test',                  len(mnist_test),   '—'),
     ('EmptyCellDataset (train)',    len(empty_train),  '—'),
-    ('PrintedDigitDataset',         len(printed),      f'{len(printed.fonts)} fonts'),
     ('Chars74KFontDataset (train)', len(chars74k_tr),  f'{len(chars74k_tr.font_ids)} fonts'),
     ('Chars74KFontDataset (test)',  len(chars74k_te),  f'{len(chars74k_te.font_ids)} fonts'),
 ]
-for name, n, extra in rows:
+for name, n, extra in rows_in_pool:
     print(f'{name:<32} {n:>6,} samples   {extra}')
+
+print()
+print('--- Deprecated source (shown in §4 for historical reference only) ---')
+print(f"{'PrintedDigitDataset':<32} {len(printed):>6,} samples   "
+      f"{len(printed.fonts)} fonts   "
+      "[v4 dropped — clipping on wide/bold glyphs]")
 """
 )
 
@@ -410,6 +422,13 @@ like a "5", the source has a label bug.
 `PrintedDigitDataset` and `Chars74KFontDataset` intentionally skip class 0
 because class 0 in this project means "empty cell", not "digit zero" — see
 the module docstring in `app/ml/dataset.py`.
+
+**Note (v4.1, 2026-04-11):** `PrintedDigitDataset` is shown in the middle
+row below and is in the current training pool. The rendering was fixed in
+v4.1 to use a 56×56 intermediate canvas that is downsized to 28×28 at the
+end, eliminating the pre-v4.1 clipping bug. A dedicated side-by-side
+comparison (old direct-28×28 vs new big-canvas-resize) is in section 4.5
+below, along with a quantitative border-ink rate.
 """
 )
 
@@ -430,13 +449,18 @@ def to_img(sample):
         return (sample.squeeze(0).numpy() * 255).astype(np.uint8)
     return np.asarray(sample, dtype=np.uint8)
 
+# 4 source rows so the class-0 column is actually populated:
+# EmptyCellDataset is the sole contributor of class 0 since the v4.2 fix
+# that drops MNIST's handwritten '0' glyphs and keeps PrintedDigit /
+# Chars74K skipping the digit zero.
 sources = [
-    ('MNIST',   mnist_train),
-    ('Printed', printed),
-    ('Chars74K', chars74k_tr),
+    ('MNIST\\n(no 0s)', mnist_train),
+    ('EmptyCell',       empty_train),
+    ('Printed',         printed),
+    ('Chars74K',        chars74k_tr),
 ]
 
-fig, axes = plt.subplots(3, 10, figsize=(16, 5))
+fig, axes = plt.subplots(len(sources), 10, figsize=(16, 5))
 for row, (name, ds) in enumerate(sources):
     idxs = first_n_per_digit(ds, n=1)
     for d in range(10):
@@ -452,13 +476,650 @@ for row, (name, ds) in enumerate(sources):
         if row == 0:
             ax.set_title(f'class {d}', fontsize=11)
         if d == 0:
-            ax.set_ylabel(name, fontsize=12)
+            ax.set_ylabel(name, fontsize=11, rotation=0, labelpad=35, va='center')
 
-plt.suptitle('One sample per class from each source — label sanity check', fontsize=13)
+plt.suptitle(
+    'One sample per class from each source — label sanity check\\n'
+    '(class 0 is served exclusively by EmptyCellDataset since the 2026-04-11 v4.2 fix)',
+    fontsize=12,
+)
 plt.tight_layout()
 plt.show()
 """
 )
+
+# -----------------------------------------------------------------------------
+# 4.5. v3 direct-28x28 vs v4.1 big-canvas-resize side-by-side
+# -----------------------------------------------------------------------------
+md(
+    """## 4.5 v3 vs v4.1 PrintedDigit rendering comparison
+
+Dedicated side-by-side visualisation of the **old v3 direct-28×28 rendering**
+vs the **new v4.1 big-canvas-resize pipeline** on the *same* font+digit+seed
+tuples. This cell reproduces the pre-v4.1 render recipe inline so that both
+versions can be rendered in the same kernel run without reverting
+`dataset.py`.
+
+The old (v3) recipe:
+- Render on 28×28 PIL canvas at font size **16-24**
+- Centre with ±2 px jitter, no bbox offset correction
+- Apply in-class augmentation (±10° rotation, noise, blur) on the **same**
+  28×28 canvas — any corner that gets rotated out of frame is clipped
+
+The new (v4.1) recipe:
+- Render on 56×56 PIL canvas at font size **32-48** (2× the old range)
+- Centre with ±4 px jitter, using textbbox offset correction
+- Apply the same augmentation on the 56×56 canvas (4× pixel headroom)
+- Final step: `cv2.resize(28×28, INTER_AREA)`
+
+**Look for:** in the v3 (top) row of each font, check whether any digit
+edge touches the 28×28 boundary — that's the clipping pattern. In the v4.1
+(bottom) row, the digit should sit inside the tile with visible whitespace
+margins on all four sides.
+
+**Red border** around a tile = that v3 sample has ink above intensity 100
+on one of the 28×28 border rows or columns (ie. the digit was clipped).
+"""
+)
+
+code(
+    """import cv2 as _cv2
+from PIL import Image as _Image, ImageDraw as _ImageDraw, ImageFont as _ImageFont
+
+def _render_v3_old(font_path: str, digit: int, seed: int) -> np.ndarray:
+    '''Reproduce the pre-v4.1 PrintedDigitDataset._render_digit.'''
+    rng = np.random.RandomState(seed)
+    s = 28
+    img = _Image.new('L', (s, s), 0)
+    draw = _ImageDraw.Draw(img)
+    font_size = int(rng.randint(16, 24))
+    font = _ImageFont.truetype(font_path, font_size)
+    text = str(digit)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (s - tw) // 2 + int(rng.randint(-2, 3))
+    y = (s - th) // 2 + int(rng.randint(-2, 3))
+    draw.text((x, y), text, fill=255, font=font)
+    arr = np.array(img)
+    if rng.random() < 0.3:
+        angle = float(rng.uniform(-10, 10))
+        M = _cv2.getRotationMatrix2D((s / 2, s / 2), angle, 1.0)
+        arr = _cv2.warpAffine(arr, M, (s, s))
+    if rng.random() < 0.2:
+        noise = rng.normal(0, 8, arr.shape)
+        arr = np.clip(arr.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+    if rng.random() < 0.2:
+        arr = _cv2.GaussianBlur(arr, (3, 3), 0)
+    return arr
+
+def _render_v41_new(font_path: str, digit: int, seed: int) -> np.ndarray:
+    '''Reproduce the v4.1 PrintedDigitDataset._render_digit.'''
+    rng = np.random.RandomState(seed)
+    s = 28
+    big_s = s * 2
+    img = _Image.new('L', (big_s, big_s), 0)
+    draw = _ImageDraw.Draw(img)
+    font_size = int(rng.randint(32, 48))
+    font = _ImageFont.truetype(font_path, font_size)
+    text = str(digit)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    x = (big_s - tw) // 2 - bbox[0] + int(rng.randint(-4, 5))
+    y = (big_s - th) // 2 - bbox[1] + int(rng.randint(-4, 5))
+    draw.text((x, y), text, fill=255, font=font)
+    arr = np.array(img)
+    if rng.random() < 0.3:
+        angle = float(rng.uniform(-10, 10))
+        M = _cv2.getRotationMatrix2D((big_s / 2, big_s / 2), angle, 1.0)
+        arr = _cv2.warpAffine(arr, M, (big_s, big_s))
+    if rng.random() < 0.2:
+        noise = rng.normal(0, 8, arr.shape)
+        arr = np.clip(arr.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+    if rng.random() < 0.2:
+        arr = _cv2.GaussianBlur(arr, (3, 3), 0)
+    arr = _cv2.resize(arr, (s, s), interpolation=_cv2.INTER_AREA)
+    return arr
+
+# Pick fonts that historically produced the most clipping — bold/condensed
+# wide glyphs. Fall back to first-N if those specific fonts aren't installed.
+bold_keywords = ('Impact', 'Arial Black', 'Bodoni 72', 'Avenir Next Condensed',
+                 'Arial Narrow Bold', 'Rockwell', 'Helvetica')
+show_fonts = []
+for kw in bold_keywords:
+    for fp in printed.fonts:
+        if kw.lower() in Path(fp).name.lower() and fp not in show_fonts:
+            show_fonts.append(fp)
+            break
+    if len(show_fonts) >= 5:
+        break
+while len(show_fonts) < 5 and len(show_fonts) < len(printed.fonts):
+    for fp in printed.fonts:
+        if fp not in show_fonts:
+            show_fonts.append(fp)
+            break
+show_fonts = show_fonts[:5]
+print(f'Showing {len(show_fonts)} fonts:')
+for fp in show_fonts:
+    print(f'  {Path(fp).name}')
+print()
+
+fig, axes = plt.subplots(
+    2 * len(show_fonts), 9,
+    figsize=(14, 1.9 * 2 * len(show_fonts)),
+)
+
+for row_idx, fp in enumerate(show_fonts):
+    fname = Path(fp).stem
+    for digit in range(1, 10):
+        seed = (abs(hash((fname, digit))) % (2**31))
+        v3_img = _render_v3_old(fp, digit, seed)
+        v41_img = _render_v41_new(fp, digit, seed)
+
+        ax_top = axes[row_idx * 2, digit - 1]
+        ax_bot = axes[row_idx * 2 + 1, digit - 1]
+
+        ax_top.imshow(v3_img, cmap='gray', vmin=0, vmax=255)
+        ax_bot.imshow(v41_img, cmap='gray', vmin=0, vmax=255)
+        for ax in (ax_top, ax_bot):
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        if digit == 1:
+            label = fname if len(fname) <= 18 else fname[:16] + '…'
+            ax_top.set_ylabel(f'{label}\\nv3', fontsize=9,
+                              rotation=0, labelpad=50, va='center')
+            ax_bot.set_ylabel('v4.1', fontsize=9,
+                              rotation=0, labelpad=50, va='center')
+        if row_idx == 0:
+            ax_top.set_title(str(digit), fontsize=12)
+
+        # Highlight v3 samples where ink touches the 28×28 border
+        v3_border_max = max(
+            int(v3_img[0].max()), int(v3_img[-1].max()),
+            int(v3_img[:, 0].max()), int(v3_img[:, -1].max()),
+        )
+        if v3_border_max > 100:
+            for spine in ax_top.spines.values():
+                spine.set_edgecolor('red')
+                spine.set_linewidth(2.5)
+
+plt.suptitle(
+    'v3 direct-28×28 (top of each pair) vs v4.1 big-canvas→resize (bottom)\\n'
+    'Red-bordered tiles = v3 samples with ink above intensity 100 on a 28×28 border row/col (clipping).',
+    fontsize=11, y=1.002,
+)
+plt.tight_layout()
+plt.show()
+"""
+)
+
+code(
+    """# Aggregate border-ink statistics over the full font set.
+# For each font × digit, render one sample with each recipe and count
+# how many land with ink above intensity 100 on any of the four borders.
+
+def _border_max(img: np.ndarray) -> int:
+    return max(
+        int(img[0].max()), int(img[-1].max()),
+        int(img[:, 0].max()), int(img[:, -1].max()),
+    )
+
+def _border_ink_rate(render_fn, n_per_digit: int = 10):
+    hits = 0
+    total = 0
+    rng = np.random.RandomState(7)
+    for fp in printed.fonts:
+        for digit in range(1, 10):
+            for _ in range(n_per_digit):
+                seed = int(rng.randint(2**31))
+                img = render_fn(fp, digit, seed)
+                if _border_max(img) > 100:
+                    hits += 1
+                total += 1
+    return hits, total
+
+v3_hits, v3_total = _border_ink_rate(_render_v3_old, n_per_digit=10)
+v41_hits, v41_total = _border_ink_rate(_render_v41_new, n_per_digit=10)
+
+print(f'Border-ink rate  (samples with ink > 100 on any 28x28 border row/col)')
+print(f'{"recipe":<30}{"hits / total":>20}{"rate":>10}')
+print('-' * 60)
+print(f'{"v3 direct-28x28":<30}{f"{v3_hits} / {v3_total}":>20}{100*v3_hits/v3_total:>9.1f}%')
+print(f'{"v4.1 big-canvas -> resize":<30}{f"{v41_hits} / {v41_total}":>20}{100*v41_hits/v41_total:>9.1f}%')
+print(f'{"delta (v3 -> v4.1)":<30}{f"{v3_hits - v41_hits} fewer":>20}{100*(v3_hits-v41_hits)/v3_total:>+9.1f}%')
+print()
+print('Visual interpretation:')
+print('  * A lower rate means fewer training samples are clipped at the border.')
+print('  * v3 had a real clipping problem on bold/condensed fonts like Impact,')
+print('    Arial Black, and Bodoni 72 — those are the fonts most likely to show')
+print('    red borders in the side-by-side grid above.')
+print('  * v4.1 eliminates the clipping by rendering on a 2x larger canvas and')
+print('    downsizing at the end, so the digit has whitespace on all four sides.')
+print()
+print('Accuracy impact (measured, not speculated):')
+print('  * v3 checkpoint:   66.6% filled / 96.9% empty / 80.6% overall on real photos')
+print('  * v4.1 checkpoint: 63.1% filled / 97.3% empty / 79.0% overall on real photos')
+print()
+print('  The visual clipping fix REGRESSES real-photo accuracy by 3.5 filled')
+print('  points. Working hypothesis: the clipped v3 training samples were')
+print('  accidentally matching the real-world cell-crop distribution where')
+print('  digits often touch tile borders after the inner-10% margin crop on')
+print('  imperfect warps. The "bug" was implicit augmentation. See')
+print('  docs/internal/evaluate_ocr_v4_1_2026_04_11.log for the measurement')
+print('  trail and project_v4_drop_printed_2026_04_11.md in memory/ for the')
+print('  v3 -> v4 -> v4.1 journey.')
+"""
+)
+
+# -----------------------------------------------------------------------------
+# 4.6 Class-0 composition fix (v4.2)
+# -----------------------------------------------------------------------------
+md(
+    """## 4.6 Class 0 composition — the v4.2 fix
+
+**The issue, pre-v4.2.** Class 0 in this project means "empty cell", not
+the digit zero. Production inference treats class 0 as a *gate*
+(`CNNRecognizer._predict_from_probs` uses `probs[1:]` for the argmax and
+falls back to 0 only when confidence < threshold), so class 0 training
+quality directly affects how willing the model is to commit to a filled
+prediction.
+
+Before 2026-04-11 the training pool contributed class 0 samples from
+**two** sources:
+
+| Source | Count | Semantic |
+|---|---|---|
+| MNIST train label 0 | ~5,923 | Handwritten round '0' digit glyphs |
+| EmptyCellDataset    | 5,000  | Synthetic blank cells (pure-black variants) |
+
+**Two problems** with that:
+
+1. **MNIST class 0 is a digit, not a blank.** 54% of class-0 training
+   samples were round handwritten-0 shapes — high-ink-content images
+   that a blank Sudoku cell never contains. The CNN was learning
+   "class 0 means either blank OR a round digit shape".
+2. **EmptyCellDataset didn't match real GT empty cells.** The four
+   pre-v4.2 variants (pure black, uniform noise, gradient, border
+   stroke) produced samples with mean ≈ 5 — "ideal pure-white paper"
+   in MNIST polarity. But real GT empty cells (measured across 1358
+   cells from 38 newspaper photos) have mean ≈ 56 because real paper
+   isn't pure white — it's ~200/255 before invert, ~56 after. The
+   synthetic was ~50 points darker than the real target.
+
+**The fix, v4.2:**
+
+1. **`_load_mnist_no_zero`** helper added to `app/ml/dataset.py`. Wraps
+   `datasets.MNIST` in a `Subset` that drops every label-0 sample.
+   Train pool loses ~5,923 samples; test pool loses ~980.
+   `PrintedDigitDataset` and `Chars74KFontDataset` already skipped
+   digit 0 in their inner loops, so they don't need changes. Verified
+   in the next cell.
+2. **`EmptyCellDataset._generate` rewrite** so each of the four
+   variants produces a sample whose pre-normalize statistics land
+   in the GT empty-cell distribution: mean ~56, std ~8, p5 ~44,
+   p95 ~82. A `_smooth_noise` helper generates spatially-correlated
+   noise (Gaussian-blurred white noise at σ ≈ 1.2 px) instead of
+   pixel-independent noise so the laplacian variance doesn't blow
+   up above GT. The four variants are:
+   - **clean paper** — uniform base + smooth noise
+   - **lighting gradient** — base + shallow gradient + smooth noise
+   - **grid-line remnant** — base + brighter line at one edge (grid
+     line survives the inner-10% margin crop and becomes bright after
+     invert)
+   - **faint ink residue** — base + small brighter blob (partial
+     erasure / bleed-through from a neighbour)
+
+The next three cells verify the fix: (a) class-0 count by source,
+(b) new EmptyCellDataset stats vs the GT target, (c) a visual grid
+of the four variants.
+"""
+)
+
+code(
+    """# (a) verify class-0 contribution per source
+from collections import Counter as _Counter
+print('Class-0 contribution per source in the training pool:')
+print()
+
+# MNIST after the drop
+mnist_labels = _Counter()
+for i in range(len(mnist_train)):
+    _, lbl = mnist_train[i]
+    mnist_labels[int(lbl)] += 1
+mnist_c0 = mnist_labels.get(0, 0)
+print(f'  MNIST (after _load_mnist_no_zero): {len(mnist_train):,} total  '
+      f'[class 0: {mnist_c0}]')
+
+# PrintedDigit
+pd_labels = _Counter(int(l) for _, l in [printed[i] for i in range(min(100, len(printed)))])
+print(f'  PrintedDigitDataset              : {len(printed):,} total  '
+      f'[class 0: {pd_labels.get(0, 0)} (sampled, skips 0 by construction)]')
+
+# Chars74K
+c74_labels = _Counter(int(l) for _, l in
+                       [chars74k_tr[i] for i in range(0, len(chars74k_tr), max(1, len(chars74k_tr)//200))])
+print(f'  Chars74KFontDataset              : {len(chars74k_tr):,} total  '
+      f'[class 0: {c74_labels.get(0, 0)} (sampled, skips 0 by construction)]')
+
+# EmptyCell
+print(f'  EmptyCellDataset                 : {len(empty_train):,} total  '
+      f'[ALL samples are class 0 by construction]')
+
+print()
+print(f'Class-0 pool total after v4.2: {len(empty_train)} ({100*len(empty_train)/(len(mnist_train)+len(empty_train)+len(printed)+len(chars74k_tr)):.1f}% of train)')
+print(f'Class-1..9 pool total        : {len(mnist_train)+len(printed)+len(chars74k_tr)}')
+print()
+print('All class 0 samples are now EmptyCellDataset. No digit-0 glyphs leak in.')
+"""
+)
+
+code(
+    """# (b) new EmptyCellDataset stats vs GT target
+empty_check = EmptyCellDataset(count=500, seed=42)
+ms = {k: [] for k in ('mean', 'std', 'p5', 'p95', 'p95_p5', 'laplacian_var')}
+for i in range(len(empty_check)):
+    t, _ = empty_check[i]
+    arr = (t.squeeze(0).numpy() * 255).astype(np.uint8)
+    arr_f = arr.astype(np.float32)
+    ms['mean'].append(arr_f.mean())
+    ms['std'].append(arr_f.std())
+    ms['p5'].append(np.percentile(arr_f, 5))
+    ms['p95'].append(np.percentile(arr_f, 95))
+    ms['p95_p5'].append(np.percentile(arr_f, 95) - np.percentile(arr_f, 5))
+    ms['laplacian_var'].append(cv2.Laplacian(arr, cv2.CV_32F).var())
+
+# Load GT stats here since this cell runs before §6 where 'stats' is set
+_gt_stats_path = Path('gt_cell_stats.json')
+if not _gt_stats_path.exists():
+    _gt_stats_path = Path('notebooks/gt_cell_stats.json')
+_local_stats = json.loads(_gt_stats_path.read_text())
+gt_empty = _local_stats['gt_empty']
+print(f'Distribution match — synthetic EmptyCellDataset vs GT empty cells')
+print(f'(GT stats are pre-normalize, post-invert to MNIST polarity — directly comparable)')
+print()
+print(f'{"metric":<16}{"synth p25":>12}{"synth p50":>12}{"synth p75":>12}  {"GT p25":>10}{"GT p50":>10}{"GT p75":>10}')
+print('-' * 85)
+for k in ('mean', 'std', 'p5', 'p95', 'p95_p5', 'laplacian_var'):
+    s25 = float(np.percentile(ms[k], 25))
+    s50 = float(np.percentile(ms[k], 50))
+    s75 = float(np.percentile(ms[k], 75))
+    g = gt_empty[k]
+    print(f'{k:<16}{s25:>12.1f}{s50:>12.1f}{s75:>12.1f}  '
+          f'{g["p25"]:>10.1f}{g["p50"]:>10.1f}{g["p75"]:>10.1f}')
+
+print()
+print('Interpretation:')
+print('  * mean / p5 / p95 / p95_p5 should match GT within ~15% at p50.')
+print('  * std may be slightly low — the _apply_newsprint min-max stretch')
+print('    downstream will amplify whatever variation exists into the final')
+print('    training tensor, so mild pre-normalize std is not a problem.')
+print('  * lap_var in GT has a very wide IQR (20-425 at p25-p75) because real')
+print('    empty cells range from smooth paper (lap_var ~20) to grid-line-heavy')
+print('    cells (lap_var ~400). Synthetic should span a similar range if the')
+print('    four variants are mixed uniformly.')
+"""
+)
+
+code(
+    """# (c) visual grid — 4 samples of each of the 4 variants
+# Reset the RNG so the visual reflects fresh draws, not the cached ec above.
+empty_vis = EmptyCellDataset(count=200, seed=0)
+
+fig, axes = plt.subplots(4, 4, figsize=(8, 8))
+variant_names = ['clean paper', 'lighting gradient', 'grid-line remnant', 'faint ink residue']
+for row in range(4):  # variant index
+    for col in range(4):  # sample index
+        # The EmptyCellDataset cycles variants via idx % 4, so we pick
+        # row + 4*(col*3) to get 4 distinct samples of each variant.
+        idx = row + 4 * (col * 3)
+        if idx >= len(empty_vis):
+            idx = (row + 4 * col) % len(empty_vis)
+        tensor, _ = empty_vis[idx]
+        arr = (tensor.squeeze(0).numpy() * 255).astype(np.uint8)
+        ax = axes[row, col]
+        ax.imshow(arr, cmap='gray', vmin=0, vmax=255)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if col == 0:
+            ax.set_ylabel(variant_names[row], fontsize=10, rotation=0,
+                          labelpad=60, va='center')
+        if row == 0:
+            ax.set_title(f'sample {col}', fontsize=9)
+
+plt.suptitle(
+    'EmptyCellDataset v4.2 — four samples per variant\\n'
+    'Target: GT empty cell mean ~56, std ~8, paper pedestal p5 ~44',
+    fontsize=12, y=1.02,
+)
+plt.tight_layout()
+plt.show()
+"""
+)
+
+# -----------------------------------------------------------------------------
+# 4.7 Per-class variation check + class-0 digit-leak check
+# -----------------------------------------------------------------------------
+md(
+    """## 4.7 Variation check — no duplicate samples, no digit-leak into class 0
+
+Two things to verify before retraining:
+
+1. **No class has accidentally duplicated samples.** If a class is
+   dominated by near-identical copies of the same image, the loss
+   gradient becomes skewed and the model over-represents that pattern.
+   Class 0 is allowed to be *less varied* than classes 1-9 because
+   empty cells really do look similar to each other by nature — but
+   there should still be some diversity across the four variants and
+   the base paper intensities, not literally identical pixels.
+
+2. **Class 0 doesn't accidentally contain digit shapes.** After the
+   v4.2 drop of MNIST label 0, there should be zero round-digit-shaped
+   samples in class 0. A quick sanity check: for an actual empty cell,
+   the *centre* of the tile should have similar pixel intensity to the
+   *border* (uniform paper). For a digit shape, the centre has much
+   more ink (higher intensity) than the border. Any class-0 sample with
+   a large center-vs-border contrast probably contains a digit that
+   shouldn't be there.
+
+The next two cells run both checks.
+"""
+)
+
+code(
+    """# (a) Per-class pairwise cosine similarity
+from torch.utils.data import ConcatDataset as _Concat
+
+def sample_features(ds, class_label, n=100):
+    '''Collect up to n samples of the given class label from ds.
+    Iterates the full dataset length — no scan cap — because class 0
+    samples live at a specific index range in the ConcatDataset (after
+    MNIST) and a bounded scan may never reach them.'''
+    samples = []
+    for i in range(len(ds)):
+        if len(samples) >= n:
+            break
+        try:
+            t, l = ds[i]
+        except Exception:
+            continue
+        if int(l) != class_label:
+            continue
+        arr = (t.squeeze(0).numpy() * 255).astype(np.float32)
+        samples.append(arr.flatten())
+    return np.stack(samples) if samples else None
+
+def pairwise_cosine(X):
+    norms = np.linalg.norm(X, axis=1, keepdims=True)
+    Xn = X / (norms + 1e-12)
+    sim = Xn @ Xn.T
+    iu = np.triu_indices_from(sim, k=1)
+    return sim[iu]
+
+# Combine all training sources to sample from
+combined_train = _Concat([mnist_train, empty_train, printed, chars74k_tr])
+
+print('Per-class pairwise cosine similarity (100 random samples per class, 4950 pairs each)')
+print()
+print(f'{"class":<7}{"source":<28}{"n":>5}{"min":>9}{"mean":>9}{"max":>9}{"near-dup (>0.99)":>18}')
+print('-' * 85)
+
+per_class_sims = {}
+for class_label in range(10):
+    feats = sample_features(combined_train, class_label, n=100)
+    if feats is None or len(feats) < 2:
+        print(f'class {class_label}  (no samples)')
+        continue
+    sims = pairwise_cosine(feats)
+    per_class_sims[class_label] = sims
+    dup_count = int(np.sum(sims > 0.99))
+    if class_label == 0:
+        source = 'EmptyCellDataset only'
+    else:
+        source = 'MNIST + Printed + Chars74K'
+    flag = '  ← ' + ('FLAG: duplicates!' if dup_count > 50 else 'ok')
+    print(f'{class_label:<7}{source:<28}{len(feats):>5}{sims.min():>9.3f}'
+          f'{sims.mean():>9.3f}{sims.max():>9.3f}{dup_count:>18}{flag}')
+"""
+)
+
+code(
+    """# (b) Histogram of pairwise similarity per class
+if per_class_sims:
+    fig, ax = plt.subplots(figsize=(11, 5))
+    colors = plt.cm.tab10.colors
+    for class_label, sims in sorted(per_class_sims.items()):
+        label = ('class 0 (empty)' if class_label == 0
+                 else f'class {class_label}')
+        linewidth = 2.5 if class_label == 0 else 1.2
+        ax.hist(sims, bins=60, alpha=0.35, label=label,
+                color=colors[class_label], histtype='step', linewidth=linewidth)
+    ax.axvline(0.99, color='red', linestyle='--', linewidth=1,
+               label='duplicate threshold (0.99)')
+    ax.set_xlabel('pairwise cosine similarity')
+    ax.set_ylabel('pair count')
+    ax.set_title('Per-class pairwise sample similarity — lower = more diverse\\n'
+                 '(class 0 is expected to cluster higher because empty cells look alike)')
+    ax.legend(loc='upper left', fontsize=8, ncol=2)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+"""
+)
+
+code(
+    """# (c) Class-0 digit-leak check — connected-component based.
+#
+# The plain center-vs-border absolute contrast triggers on the intentional
+# variant-2 grid-line remnant (bright line at an edge) and variant-3 ink
+# residue (bright blob anywhere in the tile), so it's too blunt. A digit
+# leak has a specific signature: a LARGE connected bright cluster with its
+# centroid near the tile centre. Grid-line remnants are thin and edge-
+# anchored; ink residues are small and random; clean paper has no cluster
+# at all. We quantify with three features computed on the bright-pixel
+# mask (pixels > 80 on the MNIST-polarity sample):
+#
+#   - bright_count : total bright pixels
+#   - max_cc_area  : largest connected component area
+#   - cc_centroid_dist : distance from that CC's centroid to (14, 14)
+#
+# A digit-like leak would simultaneously show a large max_cc_area (>40 px)
+# AND centroid distance near the middle (<6 px). We compare class 0 to
+# class 1 as the reference for what "digit-like" means quantitatively.
+
+import cv2 as _cv2
+
+def _leak_features(flat_feat):
+    img = flat_feat.reshape(28, 28).astype(np.uint8)
+    bright = (img > 80).astype(np.uint8)
+    bright_count = int(bright.sum())
+    if bright_count == 0:
+        return dict(bright_count=0, max_cc_area=0, centroid_dist=float('nan'))
+    n_labels, labels, stats_cc, centroids = _cv2.connectedComponentsWithStats(bright)
+    # Skip label 0 (background)
+    if n_labels <= 1:
+        return dict(bright_count=bright_count, max_cc_area=0, centroid_dist=float('nan'))
+    areas = stats_cc[1:, _cv2.CC_STAT_AREA]
+    max_idx = int(np.argmax(areas)) + 1
+    max_area = int(areas.max())
+    cy, cx = centroids[max_idx]
+    dist = float(np.sqrt((cx - 14) ** 2 + (cy - 14) ** 2))
+    return dict(bright_count=bright_count, max_cc_area=max_area, centroid_dist=dist)
+
+class0_feats = sample_features(combined_train, 0, n=500)
+class1_feats = sample_features(combined_train, 1, n=500)
+
+c0_stats = [_leak_features(f) for f in class0_feats]
+c1_stats = [_leak_features(f) for f in class1_feats]
+
+def _summary(rows, label):
+    bc = np.array([r['bright_count'] for r in rows])
+    cc = np.array([r['max_cc_area'] for r in rows])
+    cd = np.array([r['centroid_dist'] for r in rows if not np.isnan(r['centroid_dist'])])
+    print(f'{label:<12} n={len(rows)}:')
+    print(f'  bright_count   p25={int(np.percentile(bc,25)):>3}  '
+          f'p50={int(np.percentile(bc,50)):>3}  p75={int(np.percentile(bc,75)):>3}')
+    print(f'  max_cc_area    p25={int(np.percentile(cc,25)):>3}  '
+          f'p50={int(np.percentile(cc,50)):>3}  p75={int(np.percentile(cc,75)):>3}')
+    if len(cd) > 0:
+        print(f'  centroid_dist  p25={np.percentile(cd,25):>4.1f}  '
+              f'p50={np.percentile(cd,50):>4.1f}  p75={np.percentile(cd,75):>4.1f}')
+    return bc, cc, cd
+
+print('Leak feature distribution — class 0 vs class 1 reference')
+print()
+c0_bc, c0_cc, c0_cd = _summary(c0_stats, 'class 0')
+print()
+c1_bc, c1_cc, c1_cd = _summary(c1_stats, 'class 1')
+print()
+
+# "Digit-like" heuristic: max_cc_area > 40 AND centroid within 6 px of centre
+def _is_digit_like(r):
+    return (r['max_cc_area'] > 40
+            and not np.isnan(r['centroid_dist'])
+            and r['centroid_dist'] < 6)
+
+c0_leaks = sum(1 for r in c0_stats if _is_digit_like(r))
+c1_digits = sum(1 for r in c1_stats if _is_digit_like(r))
+
+print(f'Digit-like samples (max_cc_area > 40 AND centroid within 6 px of (14,14)):')
+print(f'  class 0: {c0_leaks} / {len(c0_stats)} ({100*c0_leaks/len(c0_stats):.1f}%)  '
+      f'— should be ~0, any leak is a real bug')
+print(f'  class 1: {c1_digits} / {len(c1_stats)} ({100*c1_digits/len(c1_stats):.1f}%)  '
+      f'— should be high, confirms the heuristic fires on real digits')
+print()
+if c0_leaks == 0:
+    print('✓ Class 0 has no digit-like samples. The v4.2 MNIST drop worked.')
+elif c0_leaks < 5:
+    print(f'◯ Class 0 has {c0_leaks} borderline samples. Not zero, but very low.')
+    print('  Most likely: variant-3 ink residues that happen to land near the tile centre')
+    print('  and are large enough to trip the heuristic. Visually confirm via §4.6 grid.')
+else:
+    print(f'✗ Class 0 has {c0_leaks} digit-like samples. Investigate before training.')
+
+# Histograms
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+for ax, (c0_arr, c1_arr, title) in zip(axes, [
+    (c0_bc, c1_bc, 'bright_count (pixels > 80)'),
+    (c0_cc, c1_cc, 'max_cc_area (largest bright cluster)'),
+    (c0_cd, c1_cd, 'centroid_dist to (14, 14)'),
+]):
+    ax.hist(c0_arr, bins=40, alpha=0.55, color='steelblue', label='class 0 (empty)')
+    ax.hist(c1_arr, bins=40, alpha=0.55, color='crimson',   label='class 1 (digit 1)')
+    ax.set_title(title, fontsize=10)
+    ax.set_xlabel('value')
+    ax.set_ylabel('count')
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+plt.suptitle(
+    'Class 0 vs class 1 — digit-like feature distributions.\\n'
+    'Class 0 should concentrate at low bright_count + small max_cc_area.',
+    fontsize=11, y=1.02,
+)
+plt.tight_layout()
+plt.show()
+"""
+)
+
 
 # -----------------------------------------------------------------------------
 # 5. Chars74K font-disjoint verification
@@ -609,18 +1270,23 @@ Shows the effect of the `AugmentedDataset` pipeline on 16 randomly selected
 samples, both visually (raw vs augmented) and statistically (medians of
 augmented training output vs GT target).
 
-The augmentation chain (in order):
+The augmentation chain (in order, post-v4):
 
 1. **`_apply_noise`** — legacy Gaussian noise + brightness shift + light blur
 2. **Geometric** — random rotation ±15° + affine translate/scale/shear (PIL)
-3. **`_apply_newsprint`** — Gaussian blur σ∈[0.5, 0.8] + min-max normalize;
-   parameters tuned against the GT filled-cell distribution so the post-
-   augmentation laplacian variance lands in the GT IQR (p25-p75 = 1460-3680)
+3. **`_apply_newsprint`** — Gaussian blur σ∈[0.5, 0.8] + min-max normalize
+   **+ pedestal shift `random.randint(5, 15)`** (L2, added 2026-04-11).
+   Blur parameters tuned against the GT filled-cell distribution so the post-
+   augmentation laplacian variance lands in the GT IQR (p25-p75 = 1460-3680);
+   pedestal range tuned against the measured `gt_filled_postnorm.p5` IQR
+   (p25=7, p50=9, p75=13 from `notebooks/gt_cell_stats.json`).
 
 The primary distribution-match objective is **laplacian variance** (sharpness).
-Mean and p5 stay slightly below the GT target because raw synthetic samples
-have more pure-black background than real newspaper cells — BatchNorm absorbs
-the residual mean shift.
+Pre-v4 the **secondary** gap was `p5=0` on training samples vs `p5=9` on
+real GT cells — the pedestal step closes that. Mean is still slightly below
+the GT target because of the pure-black backgrounds in raw synthetic
+sources, but BatchNorm absorbs the residual mean shift, and the post-
+pedestal `p5` should match the GT `p5` within a few pixel values.
 """
 )
 
@@ -762,23 +1428,40 @@ md(
       never touch the data the CNN sees. (Confirmed via 8-way byte diff against
       all four detect_grid fallback variants.)
 
+**Resolved by the 2026-04-11 v4 drop-PrintedDigit retrain:**
+
+- [x] **Dropped PrintedDigitDataset from training** — the 28×28 render canvas
+      was clipping wide/bold font glyphs after the downstream geometric
+      augmentation. `Chars74KFontDataset`'s bbox-crop → pad → resize
+      preprocessing avoids clipping by construction and is now the sole
+      printed-digit source. Train pool: ~76.8k → ~72.3k samples. The
+      `PrintedDigitDataset` class is retained in-file as deprecated for
+      historical notebook/measurement use.
+- [x] **L1 — realistic val/test split** shipped in `train.py`. Checkpoint
+      selection still uses the clean val split (backward-compat); end-of-
+      training eval now also reports an augmented test accuracy built by
+      wrapping `test_ds.base` with `AugmentedDataset(augment=True)`. The
+      gap between the two is the measured synthetic→realistic generalisation
+      delta. See `training_results.json:test_acc_aug`.
+- [x] **L2 — paper-pedestal augmentation** in `_apply_newsprint`. Adds a
+      random per-sample offset `random.randint(5, 15)` after min-max
+      normalize to close the measured `train p5=0` vs `GT p5=9` gap.
+      Pedestal range grounded in `gt_filled_postnorm.p5` IQR (7/9/13).
+
 **Still open (ranked by measured impact / cost from pipeline review):**
 
-- [ ] **L1. Add a realistic (`augment=True`) validation/test split** alongside
-      the existing clean one, so checkpoint promotion can be measured against
-      a distribution that actually correlates with real-photo performance.
-      **~5 lines in `create_datasets`, zero risk, immediate value.**
-- [ ] **L2. A/B test a paper-pedestal additive (p5=0 vs GT p5=9 mismatch)**
-      in `_apply_newsprint`: `img = np.clip(img + rng.randint(5, 15), 0, 255)`
-      before min-max. Cost: 1 line + 15-min retrain + eval. Measurement-only,
-      revertible.
 - [ ] **L3. Automatic interior-corner detector → piecewise warp in `/api/extract`.**
       Biggest measured impact lever (+6.2 filled points), also biggest
       engineering cost. Note: `app/core/extraction.py::infer_center_corners`
       (line 272) already exists as a dead-code starter (no callers) —
       a morphological line-intersection detector on the warped grid.
-- [ ] Per-class confusion matrix on v3 checkpoint (lives in
-      `notebooks/ocr_analysis.ipynb`; current content predates the redesign)
+- [ ] **Khan 2024 centre-of-mass digit shift at inference** — not a training
+      change. ~15 lines in `CNNRecognizer._preprocess` to translate the
+      28×28 so the ink centroid lands at `(14, 14)`. Research-grounded (see
+      `memory/lesson_research_audit_2026_04_11.md`); deferred until v4
+      stabilises so the measurement stays un-confounded.
+- [ ] Per-class confusion matrix on v4 checkpoint (lives in
+      `notebooks/ocr_analysis.ipynb`; current content predates the redesigns)
 
 **Parked / lower priority:**
 
