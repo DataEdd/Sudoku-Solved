@@ -4,7 +4,7 @@
 ![python](https://img.shields.io/badge/python-3.11+-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Extract Sudoku grids from photos and solve them. Ships as a single FastAPI container: a deterministic 4-step grid-detection fallback chain, a 102K-parameter custom CNN for per-cell digit OCR, and MRV-ordered backtracking with a 0.4 ms median solve time.
+Extract Sudoku grids from photos and solve them. A single FastAPI service wired together from a deterministic 4-step grid-detection fallback chain, a custom CNN for per-cell digit OCR (shipped as a ~400 KB ONNX checkpoint + sidecar), and MRV-ordered backtracking with a 0.4 ms median solve time.
 
 ## Pipeline
 
@@ -137,16 +137,16 @@ Logits (10)   →   softmax   →   predicted class + confidence
 
 Trained on MNIST **labels 1-9** (handwritten digits; label 0 is dropped because Sudoku's class 0 means "empty cell", not "digit zero") + ~4,500 system-font-rendered printed digits drawn from 67 allowlist-validated Latin-digit fonts (of 371 discovered in `/System/Library/Fonts/*` — the rest are rejected by a two-stage filter: font-family allowlist then a per-font distinct-Latin-digit rendering check that catches `LastResort.otf`, `Symbol.ttf`, dingbats, and CJK/math fallbacks that would otherwise ship silent label noise; the printed-digit render uses a 56×56 → `INTER_AREA` resize pipeline so bold/condensed glyphs don't clip at the output border) with rotation/noise/blur augmentation + ~1,800 Chars74K held-out-font printed digits + 5,000 `EmptyCellDataset` variants grounded in the measured GT empty-cell distribution (mean ~56, std ~8, paper pedestal p5 ~44, with synthetic grid-line remnants and faint ink residue). Training uses `CrossEntropyLoss(weight=[2, 1, 1, ...])` to compensate for class 0's reduced pool share after the MNIST-0 drop. Best test-split accuracy **99.70%** at epoch 30; real-photo accuracy on the 38-image ground truth is **66.6% filled-cell / 98.4% empty-cell / 81.3% overall** via the production detect_grid path, rising to a measured upper bound of **~84.7% / ~98.5% / ~90.8%** with ground-truth corners and the 8-point piecewise warp (the ceiling once `extract_cells_piecewise` lands in `/api/extract`). Hallucinations (empty→digit predictions) dropped from 40 to **21** between the pre-cleanup checkpoint and the shipped one.
 
-Deployed via ONNX Runtime — `requirements-deploy.txt` is PyTorch-free to keep the Docker image small. The `.onnx` file is a thin protobuf header that references a required `sudoku_cnn.onnx.data` sidecar holding the weight tensors:
+Inference runs through ONNX Runtime, and the inference-only dependency list (`requirements-deploy.txt`) is intentionally PyTorch-free — running the web app against the shipped checkpoint needs FastAPI + OpenCV + ONNX Runtime + NumPy, nothing else. The `.onnx` file is a thin protobuf header that references a required `sudoku_cnn.onnx.data` sidecar holding the weight tensors:
 
 ```
 app/ml/checkpoints/sudoku_cnn.onnx         4,152 B  (~ 4 KB protobuf header)
 app/ml/checkpoints/sudoku_cnn.onnx.data  405,120 B  (~396 KB weight tensors, REQUIRED)
                                         ─────────
-                                         409,272 B  (~400 KB total deployment footprint)
+                                         409,272 B  (~400 KB total model footprint)
 ```
 
-Loading the `.onnx` without its `.data` sidecar fails at session initialization. Both files are committed to git and both ship in the Docker image. Pytesseract is wired in as a fallback only when the CNN checkpoint is missing.
+Loading the `.onnx` without its `.data` sidecar fails at session initialization. Both files are committed to git. Pytesseract is wired in as a fallback only when the CNN checkpoint is missing.
 
 **Deep dive:** [`notebooks/03_ocr.ipynb`](notebooks/03_ocr.ipynb) covers the architecture choice, training-data composition, a train/inference preprocessing mismatch that cost 5 accuracy points, a data-leakage incident that nearly shipped an 87.8% fake result, the full filled-cell error taxonomy, and the "fix the inputs, not the model" conclusion. The per-cell deep analysis lives in [`notebooks/ocr_analysis.ipynb`](notebooks/ocr_analysis.ipynb).
 
@@ -240,7 +240,7 @@ python -m app.ml.train                    # 30 epochs, ~15 min on CPU
 python -m app.ml.train --epochs 10        # quick run
 ```
 
-Docker deployment uses `requirements-deploy.txt` and the committed ONNX checkpoint, so no PyTorch is needed at runtime. A minimal `render.yaml` is included for Render's free-plan Docker runtime.
+The `requirements-deploy.txt` install path above is the same minimal dep set CI uses to run `pytest tests/test_e2e_pipeline.py` on every push — a fresh clone can reproduce every Benchmarks-table number with it alone; PyTorch is only needed if you want to retrain.
 
 > **Ground-truth images.** The 38 newspaper photos used by the benchmark harnesses and regression tests live at `Examples/Ground Example/` and are committed to the repository (~2 MB total across 600×600 JPEGs). A fresh clone runs `python -m evaluation.evaluate_detection`, `python -m evaluation.evaluate_ocr`, and `pytest tests/test_e2e_pipeline.py` end-to-end with no external data setup. Larger training-only artefacts under `Examples/aug/` and `Examples/unsolved_dataset.zip` stay gitignored — see [`docs/data/README.md`](docs/data/README.md) for the full breakdown of which assets are in the repo vs. generated vs. bulk-only.
 
@@ -277,7 +277,6 @@ The `/debug` route serves an interactive pipeline visualizer — upload an image
 - [x] **MRV-ordered backtracking solver** — 0.42 ms median latency on the 38-puzzle ground-truth benchmark; three ground-truth puzzles flagged as unsolvable due to duplicate-digit annotation errors (data-quality signal, not solver regression)
 - [x] **Reproducible benchmark harnesses** — `evaluation/evaluate_detection.py`, `evaluation/evaluate_ocr.py`, `evaluation/benchmark_solver.py`, each writing a committed `*_results.json`; every metric in the Benchmarks table above is reproducible from a clean checkout via a `python -m evaluation.*` command
 - [x] **Interactive `/debug` pipeline visualizer** — per-stage preview, tunable preprocessing parameters, draggable corner handles on a canvas overlay
-- [x] **Docker + Render deployment manifest** — `requirements-deploy.txt` is PyTorch-free; the ~400 KB ONNX model + FastAPI server ship in a single container
 - [x] **GitHub Actions CI** — `.github/workflows/test.yml` runs `pytest tests/test_e2e_pipeline.py` on every push
 - [x] **End-to-end regression tests** — five `tests/test_e2e_pipeline.py` cases covering detection, OCR, solve rate, and per-image correctness
 
