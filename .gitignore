@@ -60,6 +60,12 @@ data/chars74k/
 # `python -m scripts.build_results_dataset` regenerates them before Kaggle
 # upload. The dataset card, JSONL, and CSV metadata files ARE tracked.
 data/results_dataset/images/
+
+# Labeled dataset: the 2620 image copies under data/labeled_dataset/images/
+# are ~124 MB and not part of the repo — they come from the upstream mexwell
+# Kaggle dataset and are regenerated from Examples/aug/ before a Kaggle
+# upload by `python -m scripts.build_labeled_dataset`.
+data/labeled_dataset/images/
 *.ipynb_checkpoints/
 research/
 # CV sync — local notes, never commit
