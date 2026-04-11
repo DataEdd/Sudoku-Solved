@@ -10,7 +10,7 @@ Extract and solve Sudoku puzzles from photos. Point your camera at a puzzle, get
 |-------|--------|
 | **Grid Detection** | 34/38 (89%) on real newspaper photos |
 | **Digit Recognition** | 62% filled-cell accuracy, 93% empty-cell accuracy |
-| **Solver** | <1ms median for valid puzzles |
+| **Solver** | 0.41 ms median on 38 GT puzzles (see `evaluation/benchmark_solver.py`) |
 
 Tested against 38 ground-truth-annotated newspaper photos.
 
@@ -26,16 +26,15 @@ Tested against 38 ground-truth-annotated newspaper photos.
 
 **Grid Detection** — CLAHE contrast enhancement + adaptive thresholding, then contour detection with structure-aware scoring. Each candidate quad is warped and checked for grid-like interior (evenly-spaced lines, ~81 cell-sized regions). A 4-step fallback chain handles varying lighting, faded print, and extreme contrast.
 
-**Digit Recognition** — 102K-parameter CNN trained on MNIST + font-rendered printed digits + synthetic empty cells. Deploys as a 24KB ONNX model. 14x faster than Tesseract with per-cell confidence scores.
+**Digit Recognition** — 102K-parameter CNN trained on MNIST + font-rendered printed digits + synthetic empty cells. Deploys as an ONNX model via ONNX Runtime (24 KB protobuf header + ~396 KB external weights in `sudoku_cnn.onnx.data` = ~420 KB total; both files ship in the Docker image). Batch inference returns per-cell confidence scores.
 
-**Solver** — Backtracking with constraint propagation and MRV heuristic. Deterministic, solves any valid puzzle in under 40ms.
+**Solver** — MRV-ordered backtracking with per-cell domain restriction. Deterministic; **0.41 ms median** on the 38-puzzle GT set (see `evaluation/benchmark_solver.py`).
 
 ## Features
 
 - **Camera-first web UI** — capture directly from phone or webcam
 - **Pipeline debug visualizer** (`/debug`) — every intermediate step with tunable parameters
-- **Piecewise perspective correction** — 8-point warp handles curved newspaper paper
-- **Ground truth evaluation** — 38 annotated images, automated parameter sweeps, OCR benchmarking
+- **Ground truth evaluation** — 38 newspaper photos with 16-point corner ground truth; production detector benchmarked via `evaluation/evaluate_detection_v2.py`, OCR via `evaluation/evaluate_ocr.py`, solver via `evaluation/benchmark_solver.py`.
 
 ## Quick Start
 
@@ -48,6 +47,14 @@ uvicorn main:app --reload
 ```
 
 Visit http://localhost:8000
+
+## Roadmap
+
+- Wire `extract_cells_piecewise` (`app/core/extraction.py:185`) into `/api/extract` for curved newspaper pages. Currently only used in `evaluate_ocr.py --piecewise` and `annotate.py` preview.
+- Wire `/api/debug` (`app/api/v1/endpoints/sudoku.py:117`) to use `detect_grid_v2` instead of the legacy `find_grid_contour` so the debug UI reflects the production detector.
+- Add a CNN-vs-Tesseract latency benchmark if a speedup claim is to be restored. Previously-advertised "14x faster" was unbacked and has been removed.
+- Publish the 38-image ground-truth dataset as a standalone HuggingFace dataset for reproducibility.
+- Extend GitHub Actions CI to run `evaluate_detection_v2.py` as a regression guard (blocked on making `Examples/Ground Example/` images available to CI — currently gitignored).
 
 ## License
 
