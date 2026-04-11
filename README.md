@@ -1,5 +1,7 @@
 # Sudoku Solver
 
+![tests](https://github.com/DataEdd/Sudoku-Solved/actions/workflows/test.yml/badge.svg)
+
 Extract and solve Sudoku puzzles from photos. Point your camera at a puzzle, get the solution.
 
 **Stack:** Python (FastAPI, OpenCV, PyTorch) + Vanilla HTML/CSS/JavaScript
