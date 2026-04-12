@@ -73,7 +73,9 @@ data/labeled_dataset/images/
 # `python -m scripts.generate_cover_image`, not source of truth.
 data/labeled_dataset/cover.png
 *.ipynb_checkpoints/
-research/
+# Top-level research directory only — ocr_v2/research/ has its own
+# (committed) PDFs for the OCR v2 sub-project's literature review.
+/research/
 # CV sync — local notes, never commit
 CV_NOTES.md
 
@@ -88,3 +90,6 @@ kaggle.json
 # scripts/build_*_dataset.py and tracked in git). The metadata file is
 # only used by the kaggle CLI at upload time.
 data/*/dataset-metadata.json
+
+# Local README draft during iteration — not tracked until swapped into README.md
+README_draft.md
