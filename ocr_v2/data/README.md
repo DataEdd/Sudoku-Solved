@@ -21,14 +21,14 @@ data/
 {image_basename}_r{row}_c{col}_gt{digit}.png
 ```
 
-- `image_basename`: source image filename without extension (e.g. `image1`, `image1005`)
+- `image_basename`: source image filename without extension (e.g. `image1`, `image42`)
 - `row`: 0-8, top to bottom in the warped grid
 - `col`: 0-8, left to right in the warped grid
 - `digit`: 0 (empty) or 1-9 (filled)
 
 The labels come from the per-image `.dat` ground truth that ships with the Wicht dataset. The 9x9 cell layout comes from a 4-point perspective warp using the outlines from `outlines_sorted.csv` (with the missing-outline images filled in via hand annotation in `extra_outlines.csv`).
 
-**Cells are saved at the full 1/9 slice (no margin trim).** The OCR agent should test different trim percentages as a hyperparameter — the parent project's v5.1 used 10% trim and the user suspects that's too lenient (grid-line residue remains at cell borders).
+**Cells are saved at the full 1/9 slice (no margin trim).** The OCR agent should test different trim percentages as a hyperparameter — the previous OCR baseline used 10% trim and there's reason to suspect that's too lenient (grid-line residue likely remains at cell borders).
 
 ## `train_metadata.jsonl` schema
 
@@ -47,10 +47,8 @@ Fields:
 
 ## What is NOT in this directory
 
-- The 40-image V2 test set
-- Any image from `image{1005, 1009, 1019, 1024, 1041, 1072, 1073, 1080, 1088, 114, 117, 120, 126, 140, 148, 153, 166, 175, 176, 179, 18, 193, 205, 208, 210, 211, 25, 31, 32, 34, 35, 39, 46, 47, 50, 51, 73, 83, 85, 91}.jpg`
-- The macfooty 2620-image augmented set
-- The parent project's 38-image hand-annotated benchmark
-- Any v5.1 model artifacts
+- Any test set
+- Any prior model artifacts
+- Any other dataset
 
-If you find yourself wanting one of those files, **stop**. The whole point of this isolated subproject is to test in-distribution training without contamination. Cross-validation on the train cells is your only generalization estimate during development.
+The training cells in `train_cells/` and the metadata in `train_metadata.jsonl` are the only data you have access to. **Cross-validation on the train cells is your only generalization estimate during development.** Do not attempt to obtain any other data via the network, pip packages, or any other channel — the whole point of this isolated subproject is to test the in-distribution training hypothesis without contamination from a held-out evaluation set.

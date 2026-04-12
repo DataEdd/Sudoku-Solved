@@ -2,42 +2,36 @@
 
 ## Mission
 
-Build an OCR model for Sudoku digit recognition, trained from scratch on Baptiste Wicht's V2 training set, that beats the previous attempt's 61.5% filled-cell accuracy on the V2 test set. The previous attempt was a 102K-parameter custom CNN trained on synthetic data; you are testing the hypothesis that **in-distribution training beats architecture choice** by training on real photographs from the same distribution as the test set.
+Build an OCR model for Sudoku digit recognition, trained from scratch on the labeled cell dataset in `data/train_cells/`. The training data comes from real newspaper Sudoku photographs taken on a mix of phone cameras spanning roughly 2006-2013. Your goal is to beat a previous synthetic-trained baseline that hits **61.5% filled-cell accuracy on the held-out evaluation set**.
 
-You have NOT seen the V2 test set. You must not read any test-set file during development. Final evaluation is **gated** — the user runs `scripts/final_eval.py` after you hand them a model. You do not run it yourself, ever.
+You have NOT seen any held-out evaluation data. Final evaluation is **gated** — the user runs the benchmark themselves in a separate environment after you hand them a finalized model. You do not run it yourself, ever, and there is no script in this directory that would let you.
 
 ## Context
 
-The previous OCR (v5.1) was a 102K-parameter custom CNN trained on:
-- MNIST handwritten digits 1-9 (label 0 dropped because Sudoku "empty" ≠ digit 0)
-- ~4,500 system-font-rendered printed digits from 67 Latin-digit fonts with rotation/noise/blur augmentation
-- ~1,800 Chars74K held-out fonts
-- ~5,000 synthetic empty-cell variants matching a separate hand-annotated benchmark distribution
+A previous OCR attempt was a 102K-parameter custom CNN trained on **synthetic data** (MNIST + ~4,500 printed digits from system fonts with augmentation + ~1,800 Chars74K held-out fonts + ~5,000 synthetic empty-cell variants). When evaluated zero-shot on the held-out evaluation set, that previous OCR scored:
 
-When v5.1 is evaluated zero-shot on the V2 test set, it scores:
+- **61.5% filled-cell accuracy**
+- **99.4% empty-cell accuracy** (very conservative — see failure mode)
+- **5 perfect images** out of ~38 evaluable images
+- **Failure mode**: 77% of errors are "missed" (CNN predicted empty when ground truth was filled). Only 6% are confidently wrong. The previous OCR is conservative on out-of-distribution inputs and abstains rather than commits.
+- **Per-phone accuracy is bimodal**: very high on certain modern smartphones, near-zero on 2006-2008 phone cameras at high resolution. Failure is concentrated on specific phone/resolution combinations, not uniform across the held-out set.
+- **Per-digit accuracy is non-uniform**: digits 8 and 9 are missed most often (~58-59% missed), digit 2 is best (~22% missed). Digits with denser ink suffer more.
 
-- **61.5% filled-cell accuracy** (676/1100)
-- **99.4% empty-cell accuracy** (very conservative)
-- **5/38 perfect images** on the 38 correctly-detected images
-- **Failure mode**: 77% of errors are "missed" (predicted empty when GT was filled). Only 6% are confidently wrong. The CNN is conservative on out-of-distribution inputs.
-- **Per-phone accuracy** is bimodal: 96% on iPhone 3GS (2009), 37% on Sony Ericsson t660i (2008) at 1600×1200. Failure is concentrated on specific phone/resolution combinations, not uniform.
-- **Per-digit accuracy** is non-uniform: digits 8 and 9 are missed most often (~58-59% missed), digit 2 is best (~22% missed). Digits with denser ink suffer more.
-
-The baseline you must beat: **61.5% filled-cell accuracy and/or 5 perfect images on the V2 test set's 40 images**.
+The baseline you must beat: **61.5% filled-cell accuracy and 5 perfect images on the held-out evaluation set**.
 
 ## The hypothesis you're testing
 
-1. **In-distribution training matters more than architecture choice.** v5.1's training data was implicitly tuned to a different photo distribution (a separate macfooty-derived benchmark of mostly modern smartphones). The Wicht V2 test set is a mix of 2006-2013 phones, dominated by 2007-era Sony Ericsson at 1600×1200. v5.1 has never seen anything like those cell crops. Training on Wicht's V2 training images (which come from the same phones as the test set) should close most of the 21-point gap.
-2. **Cell-extraction trimming is a free hyperparameter.** v5.1's preprocessing trims a 10% margin per side from each cell before resizing to 28×28. This may not be enough — there's likely grid-line residue at cell borders that confuses the classifier. The prep script you're given saved cells with the FULL 1/9 slice (no trim), so the trim is your hyperparameter to tune. **This must be a required ablation in Phase 2 below.**
+1. **In-distribution training matters more than architecture choice.** The previous OCR's training data was synthetic and implicitly tuned to a different photo distribution. Your training data is real newspaper Sudoku cells from the **same camera/print distribution as the held-out set**. The hypothesis is that this matters more than any architectural improvement — that simply training on the right distribution will close most of the gap from 61.5% to a substantially higher number.
+2. **Cell-extraction trimming is a free hyperparameter.** The previous OCR's preprocessing trimmed a 10% margin per side from each cell before resizing. This may not be enough — there's likely grid-line residue at cell borders that confuses the classifier. The cells in `data/train_cells/` are saved at the FULL 1/9 slice with no trim, so the trim percentage is your hyperparameter to tune. **This must be a required ablation in Phase 2 below.**
 
 ## Hard constraints
 
 1. **Sandboxed working directory.** You may only read and write files inside the directory this notebook lives in (your cwd). Do not attempt to read any file via absolute paths outside it. There is no parent tree to peek at — the directory was copied here precisely so you cannot.
-2. **No test-set access.** You will not find the test set in this directory. There is no `v2_test.desc`, no `image1005.jpg`, no `image91.jpg`, etc. Do not try to obtain them via the network, via pip packages, or via any other channel. If you need to estimate generalization during development, use **k-fold cross-validation on the train cells you have**.
-3. **No reuse of v5.1 code.** You don't have access to it from this directory anyway, but for clarity: do not import from `app.ml.recognizer`, `app.core.extraction`, or any other parent-repo module. v2 is a clean reimplementation. You may use any third-party library (PyTorch, scikit-learn, ONNX, etc.).
+2. **No held-out set access.** A held-out evaluation set exists, but it is NOT in this directory and you must not seek it out. Do not try to obtain it via the network, via pip packages, via the upstream source dataset, or via any other channel. If you need to estimate generalization during development, use **k-fold cross-validation on the train cells you have** — that is your only allowed signal until the user runs the gated final evaluation themselves in a separate environment.
+3. **No reuse of any prior model code.** You don't have access to it from this directory anyway. v2 is a clean reimplementation. You may use any third-party library (PyTorch, scikit-learn, ONNX, etc.) — anything `pip install`-able is fair game.
 4. **Self-contained.** Every file your final model needs to load and run lives inside this directory. The user will be able to `cp -r` it back to the main repo and have everything work.
 5. **Lab journal required.** Maintain `LAB_NOTES.md` with every experiment. Each entry needs a hypothesis, prediction, result, and one-sentence learning. This is auditable — the user reviews it after you finish.
-6. **License.** The training images are CC BY 4.0 from `wichtounet/sudoku_dataset` (the canonical research dataset by Baptiste Wicht / iCoSys, University of Fribourg). Attribute appropriately in any derivative.
+6. **License.** The training images are CC BY 4.0. Attribute appropriately in any derivative; the literature-review PDFs in `research/` are the canonical citation source.
 
 ## Workflow — follow in order
 
@@ -47,7 +41,7 @@ Read every PDF in `research/`. For each, write a short summary in `research/summ
 
 After the literature review, write **`GAME_PLAN.md`** listing 3-5 candidate approaches with tradeoffs. Examples to consider:
 
-- **Modern small CNN** properly hyperparameter-tuned for this distribution (different from v5.1's architecture)
+- **Modern small CNN** properly hyperparameter-tuned for this distribution (different from the previous OCR's architecture)
 - **Transfer learning from MNIST or SVHN** (pre-train on big data, fine-tune on Wicht train)
 - **Classical HOG + SVM** (Wicht's contemporaries — fast to iterate, useful baseline)
 - **Wicht's 2014 DBN reimplemented** (historically accurate baseline; PyTorch has RBM modules)
@@ -71,7 +65,7 @@ Only `data/train_cells/` and `data/train_metadata.jsonl`. Look at:
 | Trim per side | Effective cell area kept |
 |---|---|
 | 0% (no trim) | 100% |
-| 10% (matches v5.1) | 64% |
+| 10% (matches the previous OCR) | 64% |
 | 12% | 57.8% |
 | 15% | 49% |
 | 18% | 42.2% |
@@ -111,7 +105,7 @@ def recognize_cells(cells: List[np.ndarray]) -> Tuple[List[List[int]], List[List
     """
 ```
 
-This is the same interface the parent repo's pipeline uses, so v2 could be a drop-in replacement (the user does that integration after final_eval, not you).
+This is the same interface the user's existing pipeline uses, so v2 could be a drop-in replacement (the user does that integration after final eval, not you).
 
 Save the trained weights to `checkpoints/v2.{pth,onnx}` (whichever your model uses). Write `RESULTS.md` summarizing:
 
@@ -120,25 +114,25 @@ Save the trained weights to `checkpoints/v2.{pth,onnx}` (whichever your model us
 3. The trim ablation result from Phase 2
 4. What you'd try next if you had another day
 
-Then notify the user. **Do not run `scripts/final_eval.py`** — that's the gate the user uses to compare you against v5.1.
+Then notify the user. **Do not run any held-out evaluation yourself** — that's the gate the user uses, in a separate environment outside this directory.
 
 ## Success criteria (in priority order)
 
 1. **Cross-validation accuracy on train ≥ 75% filled-cell accuracy.** Below this, your model isn't learning anything in-distribution and there's no point running the test eval.
-2. **Beats v5.1's 61.5% filled-cell on V2 test** (the user verifies via `final_eval.py`). This is the headline metric.
-3. **Beats v5.1's 5 perfect images** on the 40-image test set (also via `final_eval.py`).
-4. **Doesn't catastrophically fail on Sony Ericsson t660i** (10 of the 40 test images, where v5.1 hits 37%). You don't need to ace these, but you should not be 0/10.
+2. **Beats the previous OCR's 61.5% filled-cell accuracy** on the held-out evaluation set (the user verifies this themselves in a separate environment). This is the headline metric.
+3. **Beats the previous OCR's 5 perfect images** on the held-out set (same gated user verification).
+4. **Handles low-quality phone photos.** A meaningful share of held-out images come from older phone cameras at high resolution. The previous OCR essentially fails on these (under 40% filled accuracy on that subset). The training set you're given includes 23 images from one of those phone models, so a successful v2 should not be 0% on that distribution.
 5. **Clean failure mode**: either conservative (low hallucinations) or roughly symmetric (wrong ≈ missed). Avoid models with many hallucinations — a single hallucinated digit kills Sudoku solvability.
-6. **Explicable**: `LAB_NOTES.md`'s final entry should answer "why does this work and v5.1 doesn't" in one paragraph.
+6. **Explicable**: `LAB_NOTES.md`'s final entry should answer "why does this work and the previous OCR doesn't" in one paragraph.
 
 ## Anti-success — what NOT to do
 
-- **Do not train on test data, even accidentally.** Cross-validate on train ONLY.
-- **Do not import any v5.1 code.** Do not look for it. There's nothing to find.
-- **Do not build an 800K-parameter monster.** v5.1 is 102K params at ~40 ms per 81-cell batch. Stay in the same ballpark — under 1M params, under 200 ms per batch. This is a Sudoku OCR, not an OCR for the entire English language.
+- **Do not train on held-out data, even accidentally.** Cross-validate on train ONLY.
+- **Do not import any prior model code.** Do not look for it. There's nothing in this directory to find.
+- **Do not build an 800K-parameter monster.** The previous OCR is 102K params at ~40 ms per 81-cell batch. Stay in the same ballpark — under 1M params, under 200 ms per batch. This is a Sudoku OCR, not an OCR for the entire English language.
 - **Do not skip the lab journal.** A great model with no journal is rejected. A mediocre model with a complete journal is accepted.
 - **Do not skip Phase 2's trim ablation.** This is a required experiment. If it turns out to be a wash, that's a finding worth recording — but you must run it.
-- **Do not build an ensemble that includes the user's previous v5.1 model.** You don't have access to it, and that would defeat the entire purpose of testing the in-distribution-training hypothesis.
+- **Do not build an ensemble that includes the user's previous OCR model.** You don't have access to it, and that would defeat the entire purpose of testing the in-distribution-training hypothesis.
 
 ## Deliverables
 

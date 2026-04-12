@@ -55,10 +55,10 @@ chosen input size):
 | 18% | 42.2% | TODO |
 | 20% | 36% | TODO |
 
-The user explicitly flagged this as a free hyperparameter that v5.1
+The user explicitly flagged this as a free hyperparameter that the previous OCR
 left at 10% without checking. Find the optimal trim level for THIS
 training distribution and use it as your default for the rest of the
-project. If best ≠ 10%, the user can apply the same trim to v5.1 in
+project. If best ≠ 10%, the user can apply the same trim to the previous OCR in
 the parent pipeline as a free win.
 
 ## Phase 3 — Baseline
@@ -68,7 +68,7 @@ the parent pipeline as a free win.
 ## Phase 5 — Final model summary
 
 (Will live in `RESULTS.md` when you're done — but copy the
-one-paragraph "why this works and v5.1 doesn't" answer here too.)
+one-paragraph "why this works and the previous OCR doesn't" answer here too.)
 
 ---
 
