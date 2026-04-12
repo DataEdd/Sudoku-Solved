@@ -147,7 +147,7 @@ cat RESULTS.md                         # final summary
 ls checkpoints/                        # trained weights
 ```
 
-Plus the user runs `python -m scripts.final_eval` (gated) to produce the official benchmark.
+Plus the user runs the gated held-out evaluation themselves in a separate environment to produce the official benchmark numbers.
 
 ## Tools you have
 
