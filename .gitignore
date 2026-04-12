@@ -73,6 +73,15 @@ data/labeled_dataset/images/
 # `python -m scripts.generate_cover_image`, not source of truth.
 data/labeled_dataset/cover.png
 *.ipynb_checkpoints/
+
+# Versioned checkpoint backups (local rollback artifacts, not tracked)
+app/ml/checkpoints/sudoku_cnn.v*
+app/ml/checkpoints/sudoku_cnn.pre-redesign*
+app/ml/checkpoints/training_results.v*
+app/ml/checkpoints/training_results.pre-redesign*
+
+# Evaluation log files (local dev output)
+app/ml/*.log
 # Top-level research directory only — ocr_v2/research/ has its own
 # (committed) PDFs for the OCR v2 sub-project's literature review.
 /research/

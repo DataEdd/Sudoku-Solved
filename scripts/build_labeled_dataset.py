@@ -92,6 +92,16 @@ OUTPUT_DIR = PROJECT_ROOT / "data" / "labeled_dataset"
 GT_BENCHMARK_SOURCE = PROJECT_ROOT / "data" / "results_dataset"
 GT_SUBFOLDER_NAME = "ground_truth_benchmark"
 
+# Wicht V2 external-validation set: 40 images + per-image pipeline
+# results. Built by `scripts/eval_wicht_test.py` and mirrored into a
+# wicht_v2_external_validation/ subfolder of the labeled dataset for
+# the Kaggle publication. Source images come from the gitignored
+# `research/wichtounet_dataset/` clone of github.com/wichtounet/sudoku_dataset.
+WICHT_DATASET_ROOT = PROJECT_ROOT / "research" / "wichtounet_dataset"
+WICHT_IMAGES_DIR = WICHT_DATASET_ROOT / "images"
+WICHT_TEST_MANIFEST = WICHT_DATASET_ROOT / "datasets" / "v2_test.desc"
+WICHT_SUBFOLDER_NAME = "wicht_v2_external_validation"
+
 # Per-image solver timeout. The shipped app.core.solver.backtracking()
 # has no max-iteration bound, and pathological OCR outputs can thrash
 # the solver for many seconds before hitting a contradiction. Cap at
@@ -314,6 +324,205 @@ def mirror_gt_benchmark_subfolder(dest: Path) -> None:
             "\n"
         )
         (subfolder / "README.md").write_text(prefix + original)
+
+
+def mirror_wicht_subfolder(dest: Path) -> None:
+    """Build the wicht_v2_external_validation/ subfolder with the 40
+    Wicht V2 test images, per-image v5.1 pipeline results, and a
+    README citing the canonical wichtounet source.
+
+    Skips gracefully if ``research/wichtounet_dataset/`` is not cloned.
+    Reuses the existing evaluation driver from ``scripts.eval_wicht_test``
+    so the logic stays in one place.
+    """
+    if not WICHT_TEST_MANIFEST.exists():
+        print(
+            f"  SKIP: {WICHT_TEST_MANIFEST} not found — "
+            f"run `git clone https://github.com/wichtounet/sudoku_dataset "
+            f"{WICHT_DATASET_ROOT}` first to populate the Wicht subfolder",
+            flush=True,
+        )
+        return
+
+    from scripts.eval_wicht_test import run_evaluation  # lazy import
+
+    subfolder = dest / WICHT_SUBFOLDER_NAME
+    subfolder.mkdir(parents=True, exist_ok=True)
+    images_dir = subfolder / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"  Running v5.1 pipeline on Wicht V2 test set "
+        f"(this takes ~1 minute)...",
+        flush=True,
+    )
+    run = run_evaluation(use_gt_corners=False)
+    per_image = run["per_image"]
+    summary = run["summary"]
+
+    # Copy the 40 test images
+    n_copied = 0
+    for r in per_image:
+        src = WICHT_IMAGES_DIR / r["filename"]
+        if src.exists():
+            shutil.copy2(src, images_dir / r["filename"])
+            n_copied += 1
+    print(f"  Copied {n_copied} Wicht test images", flush=True)
+
+    # Flatten records to a simple-schema form suitable for Kaggle
+    flat_records: List[Dict[str, Any]] = []
+    for r in per_image:
+        stats = r.get("stats", {})
+        flat_records.append({
+            "filename": r["filename"],
+            "phone": r["phone"],
+            "resolution": r["resolution"],
+            "has_outline": r["has_outline"],
+            "detected": r["detected"],
+            "solvable": r["solvable"],
+            "solve_time_ms": r["solve_time_ms"],
+            "gt_grid": r["gt_grid"],
+            "pred_grid": r["pred_grid"],
+            "filled_total": stats.get("filled_total", 0),
+            "filled_correct": stats.get("filled_correct", 0),
+            "empty_total": stats.get("empty_total", 0),
+            "empty_correct": stats.get("empty_correct", 0),
+            "wrong_count": stats.get("wrong_count", 0),
+            "missed_count": stats.get("missed_count", 0),
+            "hallucinated_count": stats.get("hallucinated_count", 0),
+            "perfect_image": stats.get("perfect_image", False),
+        })
+
+    # Write results.jsonl + results.csv with nested grids JSON-encoded
+    jsonl_path = subfolder / "results.jsonl"
+    with jsonl_path.open("w") as f:
+        for rec in flat_records:
+            f.write(json.dumps(rec) + "\n")
+
+    csv_path = subfolder / "results.csv"
+    nested = {"gt_grid", "pred_grid"}
+    if flat_records:
+        columns = list(flat_records[0].keys())
+        with csv_path.open("w", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(columns)
+            for rec in flat_records:
+                row = []
+                for col in columns:
+                    v = rec[col]
+                    if v is None:
+                        row.append("")
+                    elif col in nested:
+                        row.append(json.dumps(v))
+                    elif isinstance(v, bool):
+                        row.append("true" if v else "false")
+                    else:
+                        row.append(v)
+                writer.writerow(row)
+
+    # Write the subfolder README
+    n = summary["images_scored"]
+    detected = summary["detected"]
+    solvable = summary["solvable"]
+    perfect = summary["perfect_images"]
+    filled_det = summary.get("filled_det_rate", 0.0)
+    empty_det = summary.get("empty_det_rate", 0.0)
+
+    sub_readme = rf"""# Wicht V2 external validation — v5.1 pipeline results
+
+> **Subfolder note.** This is an **external-validation companion** to
+> the parent [Real-World Sudoku OCR dataset](..). It contains the
+> 40-image V2 test set from Baptiste Wicht's Sudoku dataset, each
+> image paired with the v5.1 pipeline's full output (detection
+> success, best-guess 9×9 grid, solver outcome, per-cell accuracy
+> against Wicht's own ground truth). The point is to give Kaggle
+> users a single-location reproduction of the external-validation
+> numbers that sit in the parent dataset's card.
+
+## What's in here
+
+```
+wicht_v2_external_validation/
+├── README.md       this file
+├── results.jsonl   40 records, one per image
+├── results.csv     flat CSV mirror with gt_grid / pred_grid JSON-encoded
+└── images/
+    ├── image1005.jpg
+    ├── image1009.jpg
+    └── ... (40 files)
+```
+
+## Summary of v5.1 results on Wicht V2
+
+| Metric | Value |
+|---|---:|
+| Total images scored | {n} |
+| Detected by `detect_grid` | **{detected}/{n}** ({100 * detected / n:.1f}%) |
+| Pipeline output solvable | {solvable}/{n} ({100 * solvable / n:.1f}%) |
+| **Perfect images (all 81 cells correct)** | **{perfect}/{n}** ({100 * perfect / n:.1f}%) |
+| Filled-cell accuracy (detected) | {100 * filled_det:.1f}% |
+| Empty-cell accuracy (detected) | {100 * empty_det:.1f}% |
+
+## Schema (one record per image)
+
+| Field | Type | Description |
+|---|---|---|
+| `filename` | str | Original Wicht filename (e.g. `image1005.jpg`) |
+| `phone` | str | Phone brand + model that took the picture (from the .dat metadata) |
+| `resolution` | str | Pixel resolution (e.g. `1600x1200`) |
+| `has_outline` | bool | True if a 4-point outline exists in Wicht's `outlines_sorted.csv` |
+| `detected` | bool | Whether v5.1's `detect_grid` returned a valid 4-point quadrilateral |
+| `solvable` | bool | Whether the predicted grid solves under MRV backtracking |
+| `solve_time_ms` | float \| null | Backtracking solver latency |
+| `gt_grid` | list[9][9] | Wicht's ground-truth 9×9 digit grid (0 = empty) |
+| `pred_grid` | list[9][9] \| null | v5.1's predicted 9×9 grid |
+| `filled_total` / `filled_correct` | int | Filled-cell accuracy numerator / denominator |
+| `empty_total` / `empty_correct` | int | Empty-cell accuracy numerator / denominator |
+| `wrong_count` | int | Number of GT-filled cells predicted as a WRONG nonzero digit |
+| `missed_count` | int | Number of GT-filled cells predicted as empty (missed) |
+| `hallucinated_count` | int | Number of GT-empty cells predicted as a nonzero digit |
+| `perfect_image` | bool | True if ALL 81 cells are correctly predicted |
+
+## Attribution
+
+The **40 image files** in `images/` are redistributed from the
+V2 test set of
+**[wichtounet/sudoku_dataset](https://github.com/wichtounet/sudoku_dataset)**
+under CC BY 4.0. Credit **Baptiste Wicht** (iCoSys research group,
+University of Fribourg / HES-SO) as the canonical source. The paper
+to cite is:
+
+> Wicht, B., Hennebert, J. (2014). *Camera-based Sudoku recognition
+> with Deep Belief Network.* 6th International Conference on Soft
+> Computing and Pattern Recognition (SoCPaR), pp. 83-88.
+
+The **per-image prediction results** in `results.jsonl` /
+`results.csv` are produced by running the shipped v5.1
+[Sudoku-Solved](https://github.com/DataEdd/Sudoku-Solved) pipeline
+over the images with no Wicht-specific training — v5.1 was trained
+on MNIST + synthetic fonts + Chars74K + synthetic empty cells, not
+on any real newspaper photos. This is deliberately a zero-shot
+cross-distribution evaluation.
+
+**License:** CC BY 4.0 (inherited from the upstream Wicht dataset).
+
+## The comparison
+
+Wicht's 2014 paper reported **87.5% perfect-image rate on V1**
+(160 images, 40 test). His Ph.D. thesis reports **82.5% on V2**.
+v5.1 gets **{100 * perfect / n:.1f}%** on V2 with zero in-distribution
+training, dominated by failures on 2007-era phones that v5.1's
+training distribution doesn't cover. Full per-phone breakdown and
+methodology comparison lives in the parent project's
+[`README.md`](https://github.com/DataEdd/Sudoku-Solved) under the
+"External validation against Wicht (2014)" section.
+"""
+    (subfolder / "README.md").write_text(sub_readme)
+    print(
+        f"  Wicht subfolder: "
+        f"{n} records, {perfect} perfect, {detected} detected",
+        flush=True,
+    )
 
 
 def write_dataset_card(
@@ -645,6 +854,13 @@ def main() -> None:
         flush=True,
     )
     mirror_gt_benchmark_subfolder(OUTPUT_DIR)
+
+    print(
+        f"Building Wicht V2 external-validation subfolder into "
+        f"{OUTPUT_DIR / WICHT_SUBFOLDER_NAME} ...",
+        flush=True,
+    )
+    mirror_wicht_subfolder(OUTPUT_DIR)
 
     if not args.no_images:
         print(f"Copying images to {OUTPUT_DIR / 'images'} ...", flush=True)
