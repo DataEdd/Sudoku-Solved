@@ -1,10 +1,11 @@
 """Generate every image asset the public README references.
 
-Produces, from a clean checkout:
+Produces PNGs with transparent backgrounds so they read well on both
+light and dark GitHub themes:
 
-    docs/hero.jpg              Solved-overlay collage, dark neutral background
-    docs/lessons/scoring.jpg   3-panel: _33_ classical vs 5-term, _4_ crossword limit
-    docs/lessons/warp.jpg      2-panel: 4-point vs 8-point piecewise on _19_
+    docs/hero.png              Solved-overlay collage
+    docs/lessons/scoring.png   _33_ classical vs 5-term + crossword failure
+    docs/lessons/warp.png      4-point vs 8-point piecewise on _19_
 
 Deterministic — no RNG — so the committed images match a fresh rerun.
 
@@ -29,7 +30,7 @@ from app.core.solver import backtracking
 from app.ml.recognizer import CNNRecognizer
 
 GT_PATH = PROJECT_ROOT / "evaluation" / "ground_truth.json"
-HERO_OUT = PROJECT_ROOT / "docs" / "hero.jpg"
+HERO_OUT = PROJECT_ROOT / "docs" / "hero.png"
 LESSONS_DIR = PROJECT_ROOT / "docs" / "lessons"
 
 OUTER_IDX = [0, 3, 15, 12]
@@ -206,15 +207,27 @@ def pick_hero_candidates(
     return accepted
 
 
-# Dark neutral gray — reads well on both light and dark GitHub themes.
-BG = (32, 32, 32)
+# Dark neutral used for title strips; outputs are BGRA PNGs where BG areas
+# go fully transparent (alpha=0) so the image reads on both GitHub themes.
+STRIP_BGR = (32, 32, 32)
+TEXT_BGR = (235, 235, 235)
 
 
-def _square_panel(
+def _to_bgra(image: np.ndarray, alpha: int = 255) -> np.ndarray:
+    """Promote a BGR image to BGRA with uniform alpha."""
+    if image.shape[2] == 4:
+        return image
+    bgra = np.zeros((image.shape[0], image.shape[1], 4), dtype=np.uint8)
+    bgra[:, :, :3] = image
+    bgra[:, :, 3] = alpha
+    return bgra
+
+
+def _square_panel_bgra(
     image: np.ndarray, corners: np.ndarray, clue: List[List[int]],
     solved: List[List[int]], size: int,
 ) -> np.ndarray:
-    """Crop around the detected grid, center-pad to square on BG, resize."""
+    """Crop around the detected grid, center-place on a transparent square."""
     painted = paint_solution(image, corners, clue, solved)
     pts = corners.reshape(-1, 2)
     x0 = max(0, int(pts[:, 0].min()) - 40)
@@ -224,10 +237,12 @@ def _square_panel(
     crop = painted[y0:y1, x0:x1]
     h, w = crop.shape[:2]
     side = max(h, w)
-    pad = np.full((side, side, 3), BG, dtype=np.uint8)
+    # Fit into (side, side) while preserving aspect, then resize to (size, size).
+    pad = np.zeros((side, side, 4), dtype=np.uint8)  # fully transparent
     oy = (side - h) // 2
     ox = (side - w) // 2
-    pad[oy:oy + h, ox:ox + w] = crop
+    pad[oy:oy + h, ox:ox + w, :3] = crop
+    pad[oy:oy + h, ox:ox + w, 3] = 255
     return cv2.resize(pad, (size, size), interpolation=cv2.INTER_AREA)
 
 
@@ -235,28 +250,29 @@ def build_hero(records: List[dict], recognizer: CNNRecognizer) -> None:
     picks = pick_hero_candidates(records, recognizer, want=6)
     size = 520
     panels = [
-        _square_panel(
+        _square_panel_bgra(
             cv2.imread(str(PROJECT_ROOT / rec["path"])),
             corners, clue, solved, size,
         )
         for rec, corners, clue, solved in picks
     ]
 
-    # Tight tile — no gaps, no outer padding. The panels are already on BG,
-    # so any square-pad within a panel matches the bordering panel's bg.
     def _row(items: List[np.ndarray]) -> np.ndarray:
-        return np.hstack(items) if items else np.zeros((size, 0, 3), dtype=np.uint8)
+        return (
+            np.hstack(items) if items
+            else np.zeros((size, 0, 4), dtype=np.uint8)
+        )
+
+    def _blank(h: int, w: int) -> np.ndarray:
+        return np.zeros((h, w, 4), dtype=np.uint8)
 
     if len(panels) >= 6:
-        top = _row(panels[0:3])
-        bot = _row(panels[3:6])
-        collage = np.vstack([top, bot])
+        collage = np.vstack([_row(panels[0:3]), _row(panels[3:6])])
     elif len(panels) == 5:
-        # 3 on top, 2 centered on bottom (padded with BG on either side).
         total_w = 3 * size
         top = _row(panels[0:3])
         bot_inner = _row(panels[3:5])
-        bot = np.full((size, total_w, 3), BG, dtype=np.uint8)
+        bot = _blank(size, total_w)
         ox = (total_w - bot_inner.shape[1]) // 2
         bot[:, ox:ox + bot_inner.shape[1]] = bot_inner
         collage = np.vstack([top, bot])
@@ -266,9 +282,9 @@ def build_hero(records: List[dict], recognizer: CNNRecognizer) -> None:
         collage = _row(panels)
 
     HERO_OUT.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(HERO_OUT), collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    cv2.imwrite(str(HERO_OUT), collage)
     print(f"  wrote {HERO_OUT.relative_to(PROJECT_ROOT)} "
-          f"({collage.shape[1]}x{collage.shape[0]}, {len(panels)} panels)")
+          f"({collage.shape[1]}x{collage.shape[0]}, {len(panels)} panels, PNG+alpha)")
 
 
 # -----------------------------------------------------------------------------
@@ -321,12 +337,22 @@ def candidate_quads(image: np.ndarray) -> List[Tuple[np.ndarray, float]]:
     return out
 
 
-def _title_strip(width: int, text: str, height: int = 46) -> np.ndarray:
-    strip = np.full((height, width, 3), BG, dtype=np.uint8)
+def _title_strip_bgra(
+    width: int, text: str, height: int = 46,
+) -> np.ndarray:
+    """Centered title strip: dark bar + light text, fully opaque BGRA."""
+    strip = np.zeros((height, width, 4), dtype=np.uint8)
+    strip[:, :, :3] = STRIP_BGR
+    strip[:, :, 3] = 255
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = 0.68
+    thickness = 1
+    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
+    x = max(10, (width - tw) // 2)
+    y = int(height * 0.7)
     cv2.putText(
-        strip, text, (14, int(height * 0.7)),
-        cv2.FONT_HERSHEY_DUPLEX, 0.68, (235, 235, 235),
-        1, cv2.LINE_AA,
+        strip, text, (x, y), font, scale, TEXT_BGR,
+        thickness, cv2.LINE_AA,
     )
     return strip
 
@@ -344,21 +370,25 @@ def _draw_quads(
     return canvas
 
 
-def _labelled_panel(
+def _labelled_panel_bgra(
     image: np.ndarray, label: str, panel_w: int, panel_h: int,
 ) -> np.ndarray:
-    """Resize to fit (panel_w, panel_h - strip_h), pad to panel_w, add title."""
+    """Labelled BGRA panel: opaque title strip + opaque image, transparent
+    around the letterboxed image so the panel sits cleanly on any bg."""
     strip_h = 46
     body_h = panel_h - strip_h
     ih, iw = image.shape[:2]
     scale = min(panel_w / iw, body_h / ih)
     new_w, new_h = int(iw * scale), int(ih * scale)
     resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    body = np.full((body_h, panel_w, 3), BG, dtype=np.uint8)
+
+    body = np.zeros((body_h, panel_w, 4), dtype=np.uint8)  # transparent
     ox = (panel_w - new_w) // 2
     oy = (body_h - new_h) // 2
-    body[oy:oy + new_h, ox:ox + new_w] = resized
-    strip = _title_strip(panel_w, label, strip_h)
+    body[oy:oy + new_h, ox:ox + new_w, :3] = resized
+    body[oy:oy + new_h, ox:ox + new_w, 3] = 255
+
+    strip = _title_strip_bgra(panel_w, label, strip_h)
     return np.vstack([strip, body])
 
 
@@ -423,33 +453,36 @@ def build_scoring_demo(records: List[dict]) -> None:
     # On _4_ the 5-term score still picks the crossword; show that quad.
     panel_c = _draw_quads(img4, five4, None) if five4 is not None else img4
 
-    # Compose: 2x2 layout with panel_c spanning bottom two columns (centered).
+    # Layout: top row is two _33_ panels side-by-side; bottom row is a wider
+    # crossword-failure panel spanning both columns with centered title.
     panel_w, panel_h = 720, 540
     top_w = 2 * panel_w
-    a = _labelled_panel(
+    a = _labelled_panel_bgra(
         panel_a, "Classical score (area + squareness + centeredness)",
         panel_w, panel_h,
     )
-    b = _labelled_panel(
+    b = _labelled_panel_bgra(
         panel_b, "5-term structure-aware score (grid-line + cell-count)",
         panel_w, panel_h,
     )
-    c = _labelled_panel(
+    c = _labelled_panel_bgra(
         panel_c,
-        "_4_: 5-term score still picks the crossword over the sudoku below",
+        "5-term score still picks the crossword over the sudoku below",
         top_w, panel_h,
     )
     collage = np.vstack([np.hstack([a, b]), c])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
-    # Clean up the prior separate-file outputs if present.
-    for stale in ("scoring_classical.jpg", "scoring_structure.jpg"):
+    # Clean up stale outputs from earlier layouts.
+    for stale in (
+        "scoring_classical.jpg", "scoring_structure.jpg", "scoring.jpg",
+    ):
         (LESSONS_DIR / stale).unlink(missing_ok=True)
 
-    out = LESSONS_DIR / "scoring.jpg"
-    cv2.imwrite(str(out), collage, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    out = LESSONS_DIR / "scoring.png"
+    cv2.imwrite(str(out), collage)
     print(f"  wrote {out.relative_to(PROJECT_ROOT)} "
-          f"({collage.shape[1]}x{collage.shape[0]})")
+          f"({collage.shape[1]}x{collage.shape[0]}, PNG+alpha)")
 
 
 # -----------------------------------------------------------------------------
@@ -559,23 +592,20 @@ def build_warp_demo(records: List[dict]) -> None:
     warp8_lined = draw_grid_lines(warp8)
 
     panel_w, panel_h = 720, 720
-    name = Path(rec["path"]).name
-    a = _labelled_panel(
-        warp4_lined, f"4-point warp  ({name})", panel_w, panel_h,
-    )
-    b = _labelled_panel(
-        warp8_lined, f"8-point piecewise warp  ({name})", panel_w, panel_h,
+    a = _labelled_panel_bgra(warp4_lined, "4-point warp", panel_w, panel_h)
+    b = _labelled_panel_bgra(
+        warp8_lined, "8-point piecewise warp", panel_w, panel_h,
     )
     collage = np.hstack([a, b])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
-    for stale in ("warp_4pt.jpg", "warp_8pt.jpg"):
+    for stale in ("warp_4pt.jpg", "warp_8pt.jpg", "warp.jpg"):
         (LESSONS_DIR / stale).unlink(missing_ok=True)
 
-    out = LESSONS_DIR / "warp.jpg"
-    cv2.imwrite(str(out), collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    out = LESSONS_DIR / "warp.png"
+    cv2.imwrite(str(out), collage)
     print(f"  wrote {out.relative_to(PROJECT_ROOT)} "
-          f"({collage.shape[1]}x{collage.shape[0]})")
+          f"({collage.shape[1]}x{collage.shape[0]}, PNG+alpha)")
 
 
 # -----------------------------------------------------------------------------
