@@ -2,11 +2,9 @@
 
 Produces, from a clean checkout:
 
-    docs/hero.jpg                       6-image solved-overlay collage
-    docs/lessons/scoring_classical.jpg  top candidate on _33_ under 3-term score
-    docs/lessons/scoring_structure.jpg  top candidate on _33_ under 5-term score
-    docs/lessons/warp_4pt.jpg           curved-newsprint grid, 4-point warp
-    docs/lessons/warp_8pt.jpg           same grid, 8-point piecewise warp
+    docs/hero.jpg              Solved-overlay collage, dark neutral background
+    docs/lessons/scoring.jpg   3-panel: _33_ classical vs 5-term, _4_ crossword limit
+    docs/lessons/warp.jpg      2-panel: 4-point vs 8-point piecewise on _19_
 
 Deterministic — no RNG — so the committed images match a fresh rerun.
 
@@ -208,74 +206,67 @@ def pick_hero_candidates(
     return accepted
 
 
+# Dark neutral gray — reads well on both light and dark GitHub themes.
+BG = (32, 32, 32)
+
+
+def _square_panel(
+    image: np.ndarray, corners: np.ndarray, clue: List[List[int]],
+    solved: List[List[int]], size: int,
+) -> np.ndarray:
+    """Crop around the detected grid, center-pad to square on BG, resize."""
+    painted = paint_solution(image, corners, clue, solved)
+    pts = corners.reshape(-1, 2)
+    x0 = max(0, int(pts[:, 0].min()) - 40)
+    y0 = max(0, int(pts[:, 1].min()) - 40)
+    x1 = min(painted.shape[1], int(pts[:, 0].max()) + 40)
+    y1 = min(painted.shape[0], int(pts[:, 1].max()) + 40)
+    crop = painted[y0:y1, x0:x1]
+    h, w = crop.shape[:2]
+    side = max(h, w)
+    pad = np.full((side, side, 3), BG, dtype=np.uint8)
+    oy = (side - h) // 2
+    ox = (side - w) // 2
+    pad[oy:oy + h, ox:ox + w] = crop
+    return cv2.resize(pad, (size, size), interpolation=cv2.INTER_AREA)
+
+
 def build_hero(records: List[dict], recognizer: CNNRecognizer) -> None:
     picks = pick_hero_candidates(records, recognizer, want=6)
-    panels = []
-    for rec, corners, clue, solved in picks:
-        img = cv2.imread(str(PROJECT_ROOT / rec["path"]))
-        painted = paint_solution(img, corners, clue, solved)
-        pts = corners.reshape(-1, 2)
-        x0 = max(0, int(pts[:, 0].min()) - 40)
-        y0 = max(0, int(pts[:, 1].min()) - 40)
-        x1 = min(painted.shape[1], int(pts[:, 0].max()) + 40)
-        y1 = min(painted.shape[0], int(pts[:, 1].max()) + 40)
-        crop = painted[y0:y1, x0:x1]
-        h, w = crop.shape[:2]
-        side = max(h, w)
-        pad = np.full((side, side, 3), 245, dtype=np.uint8)
-        oy = (side - h) // 2
-        ox = (side - w) // 2
-        pad[oy:oy + h, ox:ox + w] = crop
-        panel = cv2.resize(pad, (520, 520), interpolation=cv2.INTER_AREA)
-        panels.append(panel)
+    size = 520
+    panels = [
+        _square_panel(
+            cv2.imread(str(PROJECT_ROOT / rec["path"])),
+            corners, clue, solved, size,
+        )
+        for rec, corners, clue, solved in picks
+    ]
 
-    # Layout based on panel count.
-    #   6 → 2×3 grid
-    #   5 → 3 on top, 2 centered on bottom
-    #   4 → 2×2
-    #   ≤3 → single row
-    bg = 245
-    gap = 10
-
-    def _row(items: List[np.ndarray], total_w: int) -> np.ndarray:
-        row = np.full((520, total_w, 3), bg, dtype=np.uint8)
-        x = (total_w - (len(items) * 520 + (len(items) - 1) * gap)) // 2
-        for p in items:
-            row[:, x:x + 520] = p
-            x += 520 + gap
-        return row
+    # Tight tile — no gaps, no outer padding. The panels are already on BG,
+    # so any square-pad within a panel matches the bordering panel's bg.
+    def _row(items: List[np.ndarray]) -> np.ndarray:
+        return np.hstack(items) if items else np.zeros((size, 0, 3), dtype=np.uint8)
 
     if len(panels) >= 6:
-        top = _row(panels[0:3], 3 * 520 + 2 * gap)
-        bot = _row(panels[3:6], 3 * 520 + 2 * gap)
-        collage = np.full(
-            (2 * 520 + gap, top.shape[1], 3), bg, dtype=np.uint8
-        )
-        collage[:520] = top
-        collage[520 + gap:] = bot
+        top = _row(panels[0:3])
+        bot = _row(panels[3:6])
+        collage = np.vstack([top, bot])
     elif len(panels) == 5:
-        total_w = 3 * 520 + 2 * gap
-        top = _row(panels[0:3], total_w)
-        bot = _row(panels[3:5], total_w)
-        collage = np.full(
-            (2 * 520 + gap, total_w, 3), bg, dtype=np.uint8
-        )
-        collage[:520] = top
-        collage[520 + gap:] = bot
+        # 3 on top, 2 centered on bottom (padded with BG on either side).
+        total_w = 3 * size
+        top = _row(panels[0:3])
+        bot_inner = _row(panels[3:5])
+        bot = np.full((size, total_w, 3), BG, dtype=np.uint8)
+        ox = (total_w - bot_inner.shape[1]) // 2
+        bot[:, ox:ox + bot_inner.shape[1]] = bot_inner
+        collage = np.vstack([top, bot])
     elif len(panels) == 4:
-        total_w = 2 * 520 + gap
-        top = _row(panels[0:2], total_w)
-        bot = _row(panels[2:4], total_w)
-        collage = np.full(
-            (2 * 520 + gap, total_w, 3), bg, dtype=np.uint8
-        )
-        collage[:520] = top
-        collage[520 + gap:] = bot
+        collage = np.vstack([_row(panels[0:2]), _row(panels[2:4])])
     else:
-        collage = _row(panels, len(panels) * 520 + (len(panels) - 1) * gap)
+        collage = _row(panels)
 
     HERO_OUT.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(HERO_OUT), collage, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    cv2.imwrite(str(HERO_OUT), collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
     print(f"  wrote {HERO_OUT.relative_to(PROJECT_ROOT)} "
           f"({collage.shape[1]}x{collage.shape[0]}, {len(panels)} panels)")
 
@@ -330,9 +321,19 @@ def candidate_quads(image: np.ndarray) -> List[Tuple[np.ndarray, float]]:
     return out
 
 
-def highlight_quad(
-    image: np.ndarray, winner: np.ndarray, runner_up: Optional[np.ndarray],
-    label: str,
+def _title_strip(width: int, text: str, height: int = 46) -> np.ndarray:
+    strip = np.full((height, width, 3), BG, dtype=np.uint8)
+    cv2.putText(
+        strip, text, (14, int(height * 0.7)),
+        cv2.FONT_HERSHEY_DUPLEX, 0.68, (235, 235, 235),
+        1, cv2.LINE_AA,
+    )
+    return strip
+
+
+def _draw_quads(
+    image: np.ndarray, winner: np.ndarray,
+    runner_up: Optional[np.ndarray] = None,
 ) -> np.ndarray:
     canvas = image.copy()
     if runner_up is not None:
@@ -340,85 +341,115 @@ def highlight_quad(
         cv2.polylines(canvas, [pts], True, (40, 40, 220), 4, cv2.LINE_AA)
     pts = winner.reshape(-1, 2).astype(np.int32)
     cv2.polylines(canvas, [pts], True, (40, 200, 40), 5, cv2.LINE_AA)
-
-    # Simple text header on a white strip
-    H, W = canvas.shape[:2]
-    strip_h = max(40, H // 18)
-    strip = np.full((strip_h, W, 3), 245, dtype=np.uint8)
-    scale = strip_h / 38.0
-    cv2.putText(
-        strip, label, (16, int(strip_h * 0.7)),
-        cv2.FONT_HERSHEY_DUPLEX, scale, (20, 20, 20),
-        max(1, int(scale * 1.6)), cv2.LINE_AA,
-    )
-    return np.vstack([strip, canvas])
+    return canvas
 
 
-def build_scoring_demo(records: List[dict]) -> None:
-    rec = next(r for r in records if "_33_" in r["path"])
-    image = cv2.imread(str(PROJECT_ROOT / rec["path"]))
+def _labelled_panel(
+    image: np.ndarray, label: str, panel_w: int, panel_h: int,
+) -> np.ndarray:
+    """Resize to fit (panel_w, panel_h - strip_h), pad to panel_w, add title."""
+    strip_h = 46
+    body_h = panel_h - strip_h
+    ih, iw = image.shape[:2]
+    scale = min(panel_w / iw, body_h / ih)
+    new_w, new_h = int(iw * scale), int(ih * scale)
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    body = np.full((body_h, panel_w, 3), BG, dtype=np.uint8)
+    ox = (panel_w - new_w) // 2
+    oy = (body_h - new_h) // 2
+    body[oy:oy + new_h, ox:ox + new_w] = resized
+    strip = _title_strip(panel_w, label, strip_h)
+    return np.vstack([strip, body])
+
+
+def _pick_scoring_quads(
+    image: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, List[Tuple[np.ndarray, float, float]]]:
+    """Return (classical_top, five_top, all_scored) for an image.
+
+    all_scored entries are (quad, classical_score, five_score).
+    """
     H, W = image.shape[:2]
     img_center = np.array([W / 2.0, H / 2.0])
     max_dist = float(np.sqrt((W / 2.0) ** 2 + (H / 2.0) ** 2))
 
     quads = candidate_quads(image)
     if not quads:
-        raise RuntimeError("No quad candidates on _33_")
+        return None, None, []
     max_area = max(a for _, a in quads)
 
-    classical = [
-        (q, classical_3term_score(q, a, max_area, img_center, max_dist))
-        for q, a in quads
-    ]
-    structured = [
-        (q, structure_5term_score(image, q, a, max_area, img_center, max_dist))
-        for q, a in quads
-    ]
+    scored = []
+    for q, a in quads:
+        cl = classical_3term_score(q, a, max_area, img_center, max_dist)
+        five = structure_5term_score(image, q, a, max_area, img_center, max_dist)
+        scored.append((q, cl, five))
 
-    cl_sorted = sorted(classical, key=lambda x: -x[1])
-    st_sorted = sorted(structured, key=lambda x: -x[1])
+    cl_top = max(scored, key=lambda x: x[1])[0]
+    five_top = max(scored, key=lambda x: x[2])[0]
+    return cl_top, five_top, scored
 
-    # Identify the Sudoku quad via structure-aware winner (ground truth of "right answer")
-    sudoku_quad = st_sorted[0][0]
-    # Classical top; if it's the Sudoku, pick second-best non-Sudoku as the "loser"
-    cl_top = cl_sorted[0][0]
 
-    def same_quad(a: np.ndarray, b: np.ndarray) -> bool:
-        ca = np.mean(a, axis=0)
-        cb = np.mean(b, axis=0)
-        return float(np.linalg.norm(ca - cb)) < 30.0
+def build_scoring_demo(records: List[dict]) -> None:
+    """Compose a single docs/lessons/scoring.jpg with three labelled panels.
 
-    if same_quad(cl_top, sudoku_quad):
-        print("  [note] classical also picks the Sudoku on _33_ — trying "
-              "non-Sudoku runner-up for comparison panel.")
-        non_sud = [q for q, _ in cl_sorted if not same_quad(q, sudoku_quad)]
-        cl_top = non_sud[0] if non_sud else cl_top
+    Row 1: _33_ classical top (wrong) | _33_ five-term top (right)
+    Row 2: _4_ five-term top (still wrong — crossword wins over sudoku)
+    """
+    # --- _33_: article panel vs sudoku grid ---
+    rec33 = next(r for r in records if "_33_" in r["path"])
+    img33 = cv2.imread(str(PROJECT_ROOT / rec33["path"]))
+    cl33, five33, _ = _pick_scoring_quads(img33)
+
+    def same_quad(a: np.ndarray, b: np.ndarray, tol: float = 30.0) -> bool:
+        return float(np.linalg.norm(np.mean(a, axis=0) - np.mean(b, axis=0))) < tol
+
+    # Show classical picking a non-sudoku; if classical == five (sudoku), use the
+    # next-highest non-sudoku candidate.
+    if same_quad(cl33, five33):
+        _, _, scored33 = _pick_scoring_quads(img33)
+        non_sud = [q for q, cl, _ in sorted(scored33, key=lambda x: -x[1])
+                   if not same_quad(q, five33)]
+        cl33_panel = non_sud[0] if non_sud else cl33
+    else:
+        cl33_panel = cl33
+
+    panel_a = _draw_quads(img33, cl33_panel, five33)
+    panel_b = _draw_quads(img33, five33, None)
+
+    # --- _4_: crossword vs sudoku on same page ---
+    rec4 = next(r for r in records if "_4_" in r["path"])
+    img4 = cv2.imread(str(PROJECT_ROOT / rec4["path"]))
+    cl4, five4, _ = _pick_scoring_quads(img4)
+    # On _4_ the 5-term score still picks the crossword; show that quad.
+    panel_c = _draw_quads(img4, five4, None) if five4 is not None else img4
+
+    # Compose: 2x2 layout with panel_c spanning bottom two columns (centered).
+    panel_w, panel_h = 720, 540
+    top_w = 2 * panel_w
+    a = _labelled_panel(
+        panel_a, "Classical score (area + squareness + centeredness)",
+        panel_w, panel_h,
+    )
+    b = _labelled_panel(
+        panel_b, "5-term structure-aware score (grid-line + cell-count)",
+        panel_w, panel_h,
+    )
+    c = _labelled_panel(
+        panel_c,
+        "_4_: 5-term score still picks the crossword over the sudoku below",
+        top_w, panel_h,
+    )
+    collage = np.vstack([np.hstack([a, b]), c])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
+    # Clean up the prior separate-file outputs if present.
+    for stale in ("scoring_classical.jpg", "scoring_structure.jpg"):
+        (LESSONS_DIR / stale).unlink(missing_ok=True)
 
-    classical_img = highlight_quad(
-        image, cl_top, sudoku_quad,
-        "Classical 3-term score: top candidate (green=highest), "
-        "Sudoku grid (red=ranked below)",
-    )
-    structured_img = highlight_quad(
-        image, sudoku_quad, None,
-        "5-term structure-aware score: Sudoku grid wins (green)",
-    )
-    # Resize to width 1200 for consistency
-    target_w = 1200
-    for name, im in [
-        ("scoring_classical.jpg", classical_img),
-        ("scoring_structure.jpg", structured_img),
-    ]:
-        scale = target_w / im.shape[1]
-        resized = cv2.resize(
-            im, (target_w, int(im.shape[0] * scale)),
-            interpolation=cv2.INTER_AREA,
-        )
-        out = LESSONS_DIR / name
-        cv2.imwrite(str(out), resized, [cv2.IMWRITE_JPEG_QUALITY, 88])
-        print(f"  wrote {out.relative_to(PROJECT_ROOT)}")
+    out = LESSONS_DIR / "scoring.jpg"
+    cv2.imwrite(str(out), collage, [cv2.IMWRITE_JPEG_QUALITY, 88])
+    print(f"  wrote {out.relative_to(PROJECT_ROOT)} "
+          f"({collage.shape[1]}x{collage.shape[0]})")
 
 
 # -----------------------------------------------------------------------------
@@ -496,8 +527,13 @@ def draw_grid_lines(warped: np.ndarray) -> np.ndarray:
 
 
 def build_warp_demo(records: List[dict]) -> None:
-    # Rank by interior-corner deviation from ideal (measured):
-    # _19_ (toilet paper, 31px) > _37_ (pen+mug, 27px) > _31_ (curled paper, 24px).
+    """Compose a single docs/lessons/warp.jpg with 4-pt and 8-pt side-by-side.
+
+    Picks the image with the largest measured interior-corner deviation
+    from ideal — that's where the piecewise warp has the most to correct
+    and the difference between the two is most legible.
+    """
+    # Measured ranking: _19_ (toilet paper, 31px) > _37_ (27) > _31_ (24).
     want = ["_19_", "_37_", "_31_"]
     rec = None
     for tag in want:
@@ -514,39 +550,32 @@ def build_warp_demo(records: List[dict]) -> None:
     outer = gt_outer_corners(rec)
     inner = gt_inner_corners(rec)
 
+    warp_size = 540
     warp4 = E.perspective_transform(image, outer.reshape(4, 1, 2))
-    warp4 = cv2.resize(warp4, (540, 540), interpolation=cv2.INTER_AREA)
-
-    warp8 = piecewise_warp_image(image, outer, inner, size=540)
+    warp4 = cv2.resize(warp4, (warp_size, warp_size), interpolation=cv2.INTER_AREA)
+    warp8 = piecewise_warp_image(image, outer, inner, size=warp_size)
 
     warp4_lined = draw_grid_lines(warp4)
     warp8_lined = draw_grid_lines(warp8)
 
-    def header(img: np.ndarray, label: str) -> np.ndarray:
-        H, W = img.shape[:2]
-        strip = np.full((52, W, 3), 245, dtype=np.uint8)
-        cv2.putText(
-            strip, label, (14, 36),
-            cv2.FONT_HERSHEY_DUPLEX, 0.8, (20, 20, 20),
-            2, cv2.LINE_AA,
-        )
-        return np.vstack([strip, img])
+    panel_w, panel_h = 720, 720
+    name = Path(rec["path"]).name
+    a = _labelled_panel(
+        warp4_lined, f"4-point warp  ({name})", panel_w, panel_h,
+    )
+    b = _labelled_panel(
+        warp8_lined, f"8-point piecewise warp  ({name})", panel_w, panel_h,
+    )
+    collage = np.hstack([a, b])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
-    out4 = LESSONS_DIR / "warp_4pt.jpg"
-    out8 = LESSONS_DIR / "warp_8pt.jpg"
-    cv2.imwrite(
-        str(out4),
-        header(warp4_lined, f"4-point warp   ({Path(rec['path']).name})"),
-        [cv2.IMWRITE_JPEG_QUALITY, 90],
-    )
-    cv2.imwrite(
-        str(out8),
-        header(warp8_lined, f"8-point piecewise warp   ({Path(rec['path']).name})"),
-        [cv2.IMWRITE_JPEG_QUALITY, 90],
-    )
-    print(f"  wrote {out4.relative_to(PROJECT_ROOT)}")
-    print(f"  wrote {out8.relative_to(PROJECT_ROOT)}")
+    for stale in ("warp_4pt.jpg", "warp_8pt.jpg"):
+        (LESSONS_DIR / stale).unlink(missing_ok=True)
+
+    out = LESSONS_DIR / "warp.jpg"
+    cv2.imwrite(str(out), collage, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    print(f"  wrote {out.relative_to(PROJECT_ROOT)} "
+          f"({collage.shape[1]}x{collage.shape[0]})")
 
 
 # -----------------------------------------------------------------------------

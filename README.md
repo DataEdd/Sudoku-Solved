@@ -70,15 +70,11 @@ Detection was benchmarked against 38 hand-annotated images while OCR had no real
 
 ### 2. I designed my own candidate scoring. It wasn't wrong, but it was wrong in interesting ways.
 
-Step 1 produces dozens of candidate quads per image — the Sudoku grid, the enclosing article panel, ads, noise. Something has to pick the winner, and the classical three-term score (area + squareness + centeredness) is where detection papers start. That works most of the time, and fails in an interesting way. On image `_33_`, the classical score ranks the enclosing article panel — a rectangle that contains the *SUDOKU* header, the instructions, and the grid — above the Sudoku grid itself. The correct answer scores lower than a wrong answer that happens to be larger and equally square.
+Detection papers mostly report binary hit/miss; I wanted something richer, so the detector emits a continuous 0-1 area/shape score that ranks every candidate quad. Starting point was the classical three-term version from the literature: `area + squareness + centeredness`. That works most of the time and fails in an interesting way. On image `_33_`, it ranks the enclosing *SUDOKU* article panel — a rectangle that contains the header, the instructions, *and* the grid — above the Sudoku grid itself. The correct answer scores lower than a wrong answer that happens to be larger and equally square. The fix is two structure-aware terms that warp each candidate to 200×200 and probe the interior for 9×9-grid-like content (a line-peak count and a cell-component count). With those added, the grid wins on `_33_`.
 
-![Classical 3-term score ranks the article panel (green, top) above the Sudoku grid (red)](docs/lessons/scoring_classical.jpg)
+![Classical vs 5-term structure-aware score on _33_, and the crossword failure on _4_](docs/lessons/scoring.jpg)
 
-The fix is two structure-aware terms that warp each candidate to 200×200 and probe the interior for 9×9-grid-like content: a line-peak count and a cell-component count. With those added, the grid wins on `_33_`.
-
-![5-term structure-aware score — Sudoku grid wins](docs/lessons/scoring_structure.jpg)
-
-This is the less-obvious failure mode. The score isn't self-reporting a wrong confidence; it's *correctly ordering* the wrong candidate above the right one. Aggregate accuracy numbers hide it — only concrete failure cases surface it. The 5-term score is still imperfect: I can construct adversarial cases where even the structure terms mis-rank. It's just good enough on the images I've measured against, and the failure modes it still has are legible rather than arbitrary.
+But the structure-aware score isn't a general fix — it has its own limits. Image `_4_` is the residual failure mode: a newspaper page with a crossword above the Sudoku. The 5-term score still picks the crossword, because the structure check rewards *anything* that looks like a regular grid — 9×9 Sudokus, 15×15 crosswords, and word-search puzzles all pass the line-peak and cell-count tests. No geometry-plus-structure score operating on a single quad can tell them apart; the distinguishing signal is ink density (sparse digits for Sudoku, dense black blocks for crosswords), which isn't currently encoded anywhere in the pipeline. The broader point: any self-designed score only sees the signals you bothered to encode. Mine captures geometry and interior line structure. It doesn't capture density, layout semantics, or adjacency relationships between multiple candidates — so the failure modes it has left are legible rather than arbitrary, but they're still there.
 
 ### 3. The classifier is not where the accuracy points live.
 
@@ -89,13 +85,9 @@ Instinct after the first honest OCR number came in was "train a bigger CNN." Dec
 - Add an 8-point piecewise interior warp on top (same classifier): **84.7 %** (**+6.2** pts).
 - Remaining 15.3 pts are everything downstream of a perfect warp — classifier ceiling plus hard-ambiguity cases (handwritten-over-printed, toilet-paper sudoku, a cat sitting on the page).
 
-On a curved-paper image, the 4-point warp stretches the grid to a square by its 4 outer corners and leaves the interior bowed against the algorithm's ideal lines. You can see the green grid overlay drifting out of alignment with the real cell boundaries:
+On a curved-paper image, the 4-point warp stretches the grid to a square by its 4 outer corners and leaves the interior bowed against the algorithm's ideal lines. The 8-point piecewise warp uses the interior ⅓ / ⅔ intersection corners as additional anchors and straightens each 3×3 box independently — real grid lines line up with the algorithm's overlay:
 
-![4-point warp on a curved-paper sudoku — interior bows away from the regular grid](docs/lessons/warp_4pt.jpg)
-
-The 8-point piecewise warp uses the interior ⅓ / ⅔ intersection corners as additional anchors, straightening each 3×3 box independently. Real lines line up with the overlay:
-
-![8-point piecewise warp — same image, interior straightened](docs/lessons/warp_8pt.jpg)
+![4-point vs 8-point piecewise warp on a curved-paper sudoku](docs/lessons/warp.jpg)
 
 The engineering arc went 4-point → 8-point piecewise (recovers +6.2 filled-cell points with manually-annotated interior corners; production needs an automatic interior-corner detector before this can ship, which is a grid-line detection problem on the already-warped image). A hypothetical 16-point per-box warp would absorb more of the remaining gap but the engineering cost gets steep fast and it isn't on the current roadmap.
 
