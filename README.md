@@ -4,332 +4,160 @@
 ![python](https://img.shields.io/badge/python-3.11+-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Extract Sudoku grids from photos and solve them. A single FastAPI service wired together from a deterministic 4-step grid-detection fallback chain, a custom CNN for per-cell digit OCR (shipped as a ~400 KB ONNX checkpoint + sidecar), and MRV-ordered backtracking with a 0.4 ms median solve time.
+Photograph a Sudoku, get it back solved. A single FastAPI service that runs a custom CV detector, a 102K-parameter CNN for digit recognition, and MRV-ordered backtracking — wired end-to-end and measured against 38 hand-annotated newspaper photos.
 
-## Pipeline
-
-| 1. Input | 2. Preprocess | 3. Detect |
-|:---:|:---:|:---:|
-| ![Input](docs/pipeline/1_input.jpg) | ![Preprocess](docs/pipeline/2_threshold.jpg) | ![Detect](docs/pipeline/3_detected.jpg) |
-
-| 4. Warp | 5. OCR | 6. Solve |
-|:---:|:---:|:---:|
-| ![Warp](docs/pipeline/4_warped.jpg) | ![OCR](docs/pipeline/5_ocr_overlay.jpg) | ![Solve](docs/pipeline/6_solved.jpg) |
-
-## Benchmarks
-
-Measured end-to-end against 38 hand-annotated newspaper photos with 16-point corner ground truth. Every number in this table is the output of a single `python -m evaluation.*` command — no hand-entered headline figures.
-
-| Stage | Metric | Script |
-|---|---|---|
-| Grid detection | **34/38 (89.5%)** · median corner error 1.6 px · median IoU 0.99 | `evaluation/evaluate_detection.py` |
-| Digit OCR (custom CNN) | **66.6%** filled-cell · **98.4%** empty-cell · **81.3%** overall | `evaluation/evaluate_ocr.py` |
-| Solver (backtracking) | **0.42 ms** median · 35/38 solvable | `evaluation/benchmark_solver.py` |
-
-The OCR figures are measured using the shipped 102K-parameter CNN checkpoint trained on MNIST + system-font-rendered printed digits (67 allowlist-validated Latin-digit fonts) + Chars74K held-out printed digits + synthetic empty cells — not a plain MNIST baseline. Full per-cell breakdown in `notebooks/ocr_analysis.ipynb`.
-
-## External validation against Wicht (2014)
-
-Beyond the internal 38-image GT benchmark, v5.1 is also measured against **Baptiste Wicht's V2 Sudoku dataset** — a 40-image test set from the 2014 paper [*Camera-based Sudoku recognition with Deep Belief Network*](https://ieeexplore.ieee.org/document/7007986) (Wicht & Hennebert, ICoSoCPaR, University of Fribourg / HES-SO). Wicht's dataset lives at [github.com/wichtounet/sudoku_dataset](https://github.com/wichtounet/sudoku_dataset) under CC BY 4.0. The evaluation script is `scripts/eval_wicht_test.py` and reuses our shipped pipeline without any Wicht-specific training.
-
-| Metric | Wicht 2014 DBN on V1 | Wicht Ph.D. on V2 | **DataEdd v5.1 on V2** |
-|---|---:|---:|---:|
-| **Grid detection** (IoU ≥ 0.9 vs GT outline) | ~87.5% | — | **95.0% (38/40)** |
-| **Perfect-image rate** (all 81 cells correct) | 87.5% | 82.5% | **12.5% (5/40)** |
-| **Filled-cell accuracy** (detected images) | ~99.6% (cell error 0.37%) | — | 58.5% (676/1156) |
-| **Empty-cell accuracy** (detected images) | — | — | 99.2% (2067/2084) |
-
-**Two honest claims the data supports:**
-
-1. **Detection is strictly more robust** — 95% vs Wicht's 87.5%, thanks to a contour-based fallback chain that handles phone-generation variance better than his Hough-transform approach. Both wrong-region failures in the Wicht V2 set are on 2007-era Sony Ericsson t660i photos (`image25.jpg`, `image32.jpg`) where the detector locks onto non-grid regions.
-
-2. **OCR is dramatically worse on his test distribution** — 12.5% perfect-image rate vs 82.5%. The gap is a **training-distribution mismatch**, not a model-capacity shortfall. Wicht trained his DBN directly on 120 real photos from the same phones as his test set; v5.1 has never seen a real newspaper Sudoku photo during training (MNIST + 67-font printed digits + Chars74K + synthetic empties, all augmented toward our own 38-image GT distribution). The v6 retrain experiment confirmed that larger classifiers don't help across distribution shift — see [`data/results_dataset/README.md`](data/results_dataset/README.md).
-
-The per-phone breakdown tells the whole story:
-
-| Phone | Era | Images | Perfect rate |
-|---|---|---:|---:|
-| iPhone 5s | 2013 | 5 | **40%** |
-| iPhone 3GS | 2009 | 4 | **50%** |
-| Samsung Galaxy S4 | 2013 | 4 | 25% |
-| Sony Ericsson w660i / w880i / t660i / s500i | 2006-2008 | 26 | **0%** |
-| Nokia e65 | 2007 | 1 | 0% |
-
-Every 2013+ smartphone in the test set produces at least one perfect image; every pre-2010 phone produces zero. Per-resolution, the 13 Sony Ericsson images at 1600×1200 (the **highest** resolution in the set) get 30% filled-cell accuracy, while the 9 modern-phone images at 960×1280 get 80.6%. Raw resolution doesn't predict pipeline success — sensor generation does. Full methodology comparison, per-image analysis, IoU distributions, and the detection-verification notebook are kept in `docs/internal/wicht_comparison.md` and `docs/internal/wicht_detection_review.ipynb` (gitignored — these are internal notes, not part of the public narrative).
+![Solved puzzles](docs/hero.jpg)
 
 ## How it works
 
-The pipeline has **four stages**, organised in the order data flows through it, and each stage is matched one-to-one with a deep-dive notebook in [`notebooks/`](notebooks/). The subsections below describe *what* each stage does; the notebooks contain *why* it was built that way — earlier iterations, lessons learned, and parameter-tuning rationale.
+Four stages. Source lives in [`app/`](app/); each stage has a deep-dive notebook in [`notebooks/`](notebooks/).
 
-| # | Stage | Source | Deep dive |
-|---|---|---|---|
-| 1 | **Detection** — candidate generation | `app/core/extraction.py` | [`01_detection.ipynb`](notebooks/01_detection.ipynb) |
-| 2 | **Scoring** — candidate ranking | `app/core/extraction.py` | [`02_scoring.ipynb`](notebooks/02_scoring.ipynb) |
-| 3 | **Digit recognition (OCR)** | `app/ml/` | [`03_ocr.ipynb`](notebooks/03_ocr.ipynb) |
-| 4 | **Solving** | `app/core/solver.py` | [`04_solving.ipynb`](notebooks/04_solving.ipynb) |
+| 1. Input | 2. Preprocess | 3. Detect |
+|:---:|:---:|:---:|
+| ![](docs/pipeline/1_input.jpg) | ![](docs/pipeline/2_threshold.jpg) | ![](docs/pipeline/3_detected.jpg) |
 
-### 1. Detection — `app/core/extraction.py`
+| 4. Warp | 5. OCR | 6. Solve |
+|:---:|:---:|:---:|
+| ![](docs/pipeline/4_warped.jpg) | ![](docs/pipeline/5_ocr_overlay.jpg) | ![](docs/pipeline/6_solved.jpg) |
 
-**Role in the pipeline:** input photo → candidate quadrilaterals.
-
-`detect_grid` is a 4-step deterministic fallback chain. Each step runs a contour-based detector against a differently-preprocessed version of the input. The first step that returns a valid quadrilateral wins; later steps only run if earlier ones failed. The chain has no tunable parameters on the production path.
+**1. Detection — [`app/core/extraction.py`](app/core/extraction.py).** A 4-step deterministic contour fallback chain. The first step that returns a valid quadrilateral wins; later steps only run if earlier ones failed. Each step is a different preprocessing recipe targeting a specific real-world failure mode. Full walk-through in [`notebooks/01_detection.ipynb`](notebooks/01_detection.ipynb).
 
 ```text
-                    Input image (BGR)
-                          │
-                          ▼
-        ┌─────────────────────────────────────────┐
-        │ Step 1:  RETR_TREE                      │
-        │          + 5-component structure score  │  ── hit ──┐
-        │          (grid_structure + cell_count)  │           │
-        └─────────────────────────────────────────┘           │
-                   │ miss                                     │
-                   ▼                                          │
-        ┌─────────────────────────────────────────┐           │
-        │ Step 2:  morph dilate=3, erode=5        │  ── hit ──┤
-        │          RETR_EXTERNAL + standard score │           │
-        └─────────────────────────────────────────┘           │
-                   │ miss                                     │    first
-                   ▼                                          │    success
-        ┌─────────────────────────────────────────┐           │    wins
-        │ Step 3:  aggressive CLAHE (clip=6, C=7) │  ── hit ──┤
-        │          RETR_EXTERNAL + standard score │           │
-        └─────────────────────────────────────────┘           │
-                   │ miss                                     │
-                   ▼                                          │
-        ┌─────────────────────────────────────────┐           │
-        │ Step 4:  morph dilate=3, erode=3        │  ── hit ──┤
-        │          RETR_EXTERNAL + standard score │           │
-        └─────────────────────────────────────────┘           │
-                   │ miss                                     │
-                   ▼                                          │
-              (None, 0.0)                                     │
-                                                              │
-                                                              ▼
-                                       corners [TL, TR, BR, BL] + confidence
+                Input image (BGR)
+                      │
+                      ▼
+    ┌─────────────────────────────────────────┐
+    │ Step 1  RETR_TREE                       │
+    │         + 5-component structure score   │  ── hit ──┐
+    │         (grid_structure + cell_count)   │           │
+    └─────────────────────────────────────────┘           │
+               │ miss                                     │
+               ▼                                          │
+    ┌─────────────────────────────────────────┐           │
+    │ Step 2  morph dilate=3, erode=5         │  ── hit ──┤    first
+    │         RETR_EXTERNAL + classical score │           │    success
+    └─────────────────────────────────────────┘           │    wins
+               │ miss                                     │
+               ▼                                          │
+    ┌─────────────────────────────────────────┐           │
+    │ Step 3  aggressive CLAHE (clip=6, C=7)  │  ── hit ──┤
+    │         RETR_EXTERNAL + classical score │           │
+    └─────────────────────────────────────────┘           │
+               │ miss                                     │
+               ▼                                          │
+    ┌─────────────────────────────────────────┐           │
+    │ Step 4  morph dilate=3, erode=3         │  ── hit ──┤
+    │         RETR_EXTERNAL + classical score │           │
+    └─────────────────────────────────────────┘           │
+               │ miss                                     │
+               ▼                                          │
+          (None, 0.0)                                     │
+                                                          ▼
+                              corners [TL, TR, BR, BL] + confidence
 ```
 
-Step 1 handles 29 of the 34 successful detections. It uses `cv2.RETR_TREE` to find nested contours — important when the Sudoku grid lives inside a larger enclosing shape such as a crossword block — and ranks the resulting candidate quads with the structure-aware scorer described in [§ 2 below](#2-scoring--appcoreextractionpy). Steps 2–4 are simpler `RETR_EXTERNAL` fallbacks; each runs with a different preprocessing recipe targeting a specific real-world failure mode:
+**2. Scoring — [`app/core/extraction.py`](app/core/extraction.py).** Step 1 produces dozens of candidate quads per image. A 5-term weighted score picks the winner: three classical quad primitives (area, squareness, centeredness) plus two structure-aware terms that warp each candidate to 200×200 and ask *does the interior look like a 9×9 grid?* — a line-peak check targeting ~10 peaks per axis, and a connected-component check targeting ~81 cell-sized regions. Why those weights, why those checks: [`notebooks/02_scoring.ipynb`](notebooks/02_scoring.ipynb).
 
-| Step | Preprocessing delta vs Step 1 | Rescues images | Targets |
-|---|---|---|---|
-| **2** | `dilate(3×3)` then `erode(5×5)` (net thinning) | `_39_` | Fragmented contour |
-| **3** | **CLAHE `clipLimit=6.0`**, threshold `C=7` | `_17_`, `_24_` | Faint print |
-| **4** | `dilate(3×3)` then `erode(3×3)` (symmetric closing) | `_23_`, `_26_` | Broken lines |
+**3. Digit recognition — [`app/ml/`](app/ml/).** A 102,026-parameter CNN: three Conv-BN-ReLU blocks (32 → 64 → 128 channels) → adaptive pooling → a two-layer FC head with dropout. Trained on MNIST (labels 1-9 only — class 0 means *empty cell*), 4,500 system-font-rendered printed digits from 67 allowlist-validated Latin-digit fonts, Chars74K held-out fonts, and synthetic empty-cell variants calibrated against the benchmark GT distribution. Deployed via ONNX Runtime — `requirements-deploy.txt` is PyTorch-free. Architecture, training data, and error taxonomy: [`notebooks/03_ocr.ipynb`](notebooks/03_ocr.ipynb).
 
-After a successful detection the corners are ordered `[TL, TR, BR, BL]` via a sum/diff heuristic and refined with `cv2.cornerSubPix`. Confidence is `min(1.0, area_ratio / 0.5)` when the quad covers at least 5% of the image, else 0. On the 38-image ground-truth set the chain detects 34/38 (89.5%) with median per-corner error 1.6 px and median IoU 0.99; the four missed images (`_1_`, `_21_`, `_35_`, `_38_`) have grid edges too low-contrast for any single-pass contour detector in this family.
+**4. Solving — [`app/core/solver.py`](app/core/solver.py).** MRV-ordered backtracking with per-cell domain restriction: at each recursive step, pick the empty cell with the fewest remaining candidates, try each in turn, recurse on a hit, undo on a dead end. 0.42 ms median on the 38-puzzle benchmark. Follows the classical CSP skeleton from Kamal, Chawla & Goel (2015) [[1]](#references); MRV is the single enhancement on top. Why backtracking beat simulated annealing and why constraint propagation is a future direction: [`notebooks/04_solving.ipynb`](notebooks/04_solving.ipynb).
 
-**Deep dive:** [`notebooks/01_detection.ipynb`](notebooks/01_detection.ipynb) — the crossword-nesting failure case, per-step visualisations, and per-image rescue breakdown.
+## Lessons learned
 
-### 2. Scoring — `app/core/extraction.py`
+### 1. Measure end-to-end from day one.
 
-**Role in the pipeline:** candidate quadrilaterals → the single best candidate.
+Detection was benchmarked against 38 hand-annotated images while OCR had no real-photo validation for weeks. The data to grade OCR was already there — every GT entry had a 9×9 digit grid sitting next to its corner annotations — nobody had bothered to write `evaluate_ocr.py` that actually used them. When I finally did, the first honest pipeline number came in far below what the component-level metrics would have predicted. Strong component metrics don't compose into strong system metrics; only end-to-end measurement against external ground truth catches that.
 
-Step 1 of the detection chain can produce many convex-quad candidates on a single image — the outer Sudoku grid, any crossword block next to it, header boxes, thumbnails, ad blocks, and noise. The scoring function is what picks the Sudoku grid out of that pile. It's a 5-component weighted sum:
+### 2. I designed my own candidate scoring. It wasn't wrong, but it was wrong in interesting ways.
 
-```
-score  =  0.20 · area_norm        ← classical: relative size
-       +  0.20 · squareness       ← classical: min(w,h) / max(w,h)
-       +  0.10 · centeredness     ← classical: distance from image centre
-       +  0.30 · grid_structure   ← structure-aware: interior line-pattern check
-       +  0.20 · cell_count       ← structure-aware: interior component-count check
-```
+Step 1 produces dozens of candidate quads per image — the Sudoku grid, the enclosing article panel, ads, noise. Something has to pick the winner, and the classical three-term score (area + squareness + centeredness) is where detection papers start. That works most of the time, and fails in an interesting way. On image `_33_`, the classical score ranks the enclosing article panel — a rectangle that contains the *SUDOKU* header, the instructions, and the grid — above the Sudoku grid itself. The correct answer scores lower than a wrong answer that happens to be larger and equally square.
 
-The two structure-aware components are what make Step 1 reliable on hard images. Both warp the candidate to a 200×200 square and ask *does the interior look like a 9×9 grid?* — `grid_structure` extracts horizontal and vertical lines via morphological opening, projects them to 1-D profiles, and targets **~10 peaks per axis** with regular spacing and full coverage (a 9×9 grid has 10 line positions per axis: 8 interior dividers + 2 outer borders); `cell_count` runs `cv2.connectedComponentsWithStats` on the inverted warped image and targets **~81 cell-sized components** with consistent areas. Together they let the scorer reject candidates that are *shaped* like a grid (square, centered, large area) but don't actually contain a grid interior.
+![Classical 3-term score ranks the article panel (green, top) above the Sudoku grid (red)](docs/lessons/scoring_classical.jpg)
 
-**Deep dive:** [`notebooks/02_scoring.ipynb`](notebooks/02_scoring.ipynb) — each component with code demos on image `_33_`, the weight-tuning rationale, and the final showdown where the Sudoku grid beats a larger, more centered crossword block.
+The fix is two structure-aware terms that warp each candidate to 200×200 and probe the interior for 9×9-grid-like content: a line-peak count and a cell-component count. With those added, the grid wins on `_33_`.
 
-### 3. Digit recognition (OCR) — `app/ml/`
+![5-term structure-aware score — Sudoku grid wins](docs/lessons/scoring_structure.jpg)
 
-**Role in the pipeline:** warped grid → 9×9 integer grid.
+This is the less-obvious failure mode. The score isn't self-reporting a wrong confidence; it's *correctly ordering* the wrong candidate above the right one. Aggregate accuracy numbers hide it — only concrete failure cases surface it. The 5-term score is still imperfect: I can construct adversarial cases where even the structure terms mis-rank. It's just good enough on the images I've measured against, and the failure modes it still has are legible rather than arbitrary.
 
-A 102,026-parameter custom CNN maps 28×28 grayscale cell crops to 10 classes (`0` = empty, `1`–`9` = digits). The architecture is three Conv-BN-ReLU blocks followed by global pooling and a small classifier head:
+### 3. The classifier is not where the accuracy points live.
 
-```text
-Input (28 × 28 × 1 grayscale cell)
-  │
-  ▼
-Conv2d(1  → 32, kernel 3×3, pad 1) → BN → ReLU → MaxPool(2×2)    ▶ (14 × 14 × 32)
-  │
-  ▼
-Conv2d(32 → 64, kernel 3×3, pad 1) → BN → ReLU → MaxPool(2×2)    ▶ ( 7 ×  7 × 64)
-  │
-  ▼
-Conv2d(64 →128, kernel 3×3, pad 1) → BN → ReLU → AdaptiveAvgPool(1)  ▶ ( 1 ×  1 × 128)
-  │
-  ▼
-Flatten → Linear(128 → 64) → ReLU → Dropout(p = 0.3) → Linear(64 → 10)
-  │
-  ▼
-Logits (10)   →   softmax   →   predicted class + confidence
-```
+Instinct after the first honest OCR number came in was "train a bigger CNN." Decomposing the gap against ground truth tells a different story:
 
-Trained on MNIST **labels 1-9** (handwritten digits; label 0 is dropped because Sudoku's class 0 means "empty cell", not "digit zero") + ~4,500 system-font-rendered printed digits drawn from 67 allowlist-validated Latin-digit fonts (of 371 discovered in `/System/Library/Fonts/*` — the rest are rejected by a two-stage filter: font-family allowlist then a per-font distinct-Latin-digit rendering check that catches `LastResort.otf`, `Symbol.ttf`, dingbats, and CJK/math fallbacks that would otherwise ship silent label noise; the printed-digit render uses a 56×56 → `INTER_AREA` resize pipeline so bold/condensed glyphs don't clip at the output border) with rotation/noise/blur augmentation + ~1,800 Chars74K held-out-font printed digits + 5,000 `EmptyCellDataset` variants grounded in the measured GT empty-cell distribution (mean ~56, std ~8, paper pedestal p5 ~44, with synthetic grid-line remnants and faint ink residue). Training uses `CrossEntropyLoss(weight=[2, 1, 1, ...])` to compensate for class 0's reduced pool share after the MNIST-0 drop. Best test-split accuracy **99.5%** at epoch 26; real-photo accuracy on the 38-image ground truth is **66.6% filled-cell / 98.4% empty-cell / 81.3% overall** via the production detect_grid path, rising to a measured upper bound of **~84.7% / ~98.5% / ~90.8%** with ground-truth corners and the 8-point piecewise warp (the ceiling once `extract_cells_piecewise` lands in `/api/extract`). Hallucinations (empty→digit predictions) dropped from 40 to **21** between the pre-cleanup checkpoint and the shipped one.
+- Production pipeline (detector → 4-point warp → CNN): **66.6 %** filled-cell accuracy.
+- Replace the detector with perfect outer corners (same warp, same classifier): **78.5 %** (**+11.9** pts).
+- Add an 8-point piecewise interior warp on top (same classifier): **84.7 %** (**+6.2** pts).
+- Remaining 15.3 pts are everything downstream of a perfect warp — classifier ceiling plus hard-ambiguity cases (handwritten-over-printed, toilet-paper sudoku, a cat sitting on the page).
 
-Inference runs through ONNX Runtime, and the inference-only dependency list (`requirements-deploy.txt`) is intentionally PyTorch-free — running the web app against the shipped checkpoint needs FastAPI + OpenCV + ONNX Runtime + NumPy, nothing else. The `.onnx` file is a thin protobuf header that references a required `sudoku_cnn.onnx.data` sidecar holding the weight tensors:
+On a curved-paper image, the 4-point warp stretches the grid to a square by its 4 outer corners and leaves the interior bowed against the algorithm's ideal lines. You can see the green grid overlay drifting out of alignment with the real cell boundaries:
 
-```
-app/ml/checkpoints/sudoku_cnn.onnx         4,152 B  (~ 4 KB protobuf header)
-app/ml/checkpoints/sudoku_cnn.onnx.data  405,120 B  (~396 KB weight tensors, REQUIRED)
-                                        ─────────
-                                         409,272 B  (~400 KB total model footprint)
-```
+![4-point warp on a curved-paper sudoku — interior bows away from the regular grid](docs/lessons/warp_4pt.jpg)
 
-Loading the `.onnx` without its `.data` sidecar fails at session initialization. Both files are committed to git. Pytesseract is wired in as a fallback only when the CNN checkpoint is missing.
+The 8-point piecewise warp uses the interior ⅓ / ⅔ intersection corners as additional anchors, straightening each 3×3 box independently. Real lines line up with the overlay:
 
-**Deep dive:** [`notebooks/03_ocr.ipynb`](notebooks/03_ocr.ipynb) covers the architecture choice, training-data composition, a train/inference preprocessing mismatch that cost 5 accuracy points, a data-leakage incident that nearly shipped an 87.8% fake result, the full filled-cell error taxonomy, and the "fix the inputs, not the model" conclusion. The per-cell deep analysis lives in [`notebooks/ocr_analysis.ipynb`](notebooks/ocr_analysis.ipynb).
+![8-point piecewise warp — same image, interior straightened](docs/lessons/warp_8pt.jpg)
 
-### 4. Solving — `app/core/solver.py`
+The engineering arc went 4-point → 8-point piecewise (recovers +6.2 filled-cell points with manually-annotated interior corners; production needs an automatic interior-corner detector before this can ship, which is a grid-line detection problem on the already-warped image). A hypothetical 16-point per-box warp would absorb more of the remaining gap but the engineering cost gets steep fast and it isn't on the current roadmap.
 
-**Role in the pipeline:** 9×9 integer grid (with empty cells) → solved 9×9 grid.
+A later experiment confirmed the decomposition the hard way. An architecture ablation suggested a 4× larger CNN; I promoted it, retrained at full protocol, and it **regressed** on real-photo filled-cell accuracy by 1.4 pts despite matching synthetic test numbers. The larger classifier is *more* sensitive to upstream warp distortion, not less. Rolled back. Classifier capacity isn't the bottleneck when the input distribution is being shaped by upstream pipeline stages.
 
-The solver is MRV-ordered backtracking with per-cell domain restriction. At each recursive step it picks the empty cell with the fewest remaining candidates, tries each candidate in turn, and recurses. On a dead end — a cell whose candidate set becomes empty — it returns False so the parent frame can try the next value. The skeleton is the classical CSP procedure described in Kamal et al. [\[1\]](#references); the Minimum Remaining Value heuristic on top shrinks the average branching factor so that each recursion expands the most-constrained cell first.
+### 4. Fallback chains beat single-method detectors on photos in the wild.
 
-```text
-Algorithm 1  MRV-Ordered Backtracking for Sudoku
+Most grid-detection papers — including the Wicht 2014 paper this project benchmarks against — pick one method (Hough transform, DBN) and tune it well. That approach broke for me on real newspaper photos: every problem image has its own failure mode, and no single preprocessing recipe covers all of them. The first three detectors I wrote (standard Hough, generalized Hough, Sobel edges, line-segment detection) fell over on the first real image I threw at them.
 
- 1:  procedure Solve(G)
- 2:      Input:   9 × 9 grid G with 0 denoting empty cells
- 3:      Output:  True if a solution is written into G in place; False otherwise
- 4:
- 5:      best        ← None
- 6:      best_cands  ← None
- 7:
- 8:      for each cell (r, c) in G do
- 9:          if G[r][c] = 0 then
-10:              cands ← {1, …, 9} − used_in_row(r) − used_in_col(c) − used_in_box(r, c)
-11:              if cands = ∅ then
-12:                  return False                                 ▷ dead end: backtrack
-13:              end if
-14:              if best = None or |cands| < |best_cands| then
-15:                  best       ← (r, c)
-16:                  best_cands ← cands
-17:                  if |cands| = 1 then
-18:                      break                                    ▷ forced move: stop scanning
-19:                  end if
-20:              end if
-21:          end if
-22:      end for
-23:
-24:      if best = None then
-25:          return True                                          ▷ grid is full: puzzle solved
-26:      end if
-27:
-28:      (r, c) ← best
-29:      for each val in best_cands do
-30:          G[r][c] ← val
-31:          if Solve(G) then
-32:              return True
-33:          end if
-34:          G[r][c] ← 0                                          ▷ undo assignment
-35:      end for
-36:      return False
-37:  end procedure
-```
+What shipped is a 4-step fallback chain where each step is a specific failure case made permanent in code:
 
-Median latency on the 38-puzzle ground-truth set is **0.42 ms**; `python -m evaluation.benchmark_solver` reproduces the full min/median/mean/p95/max distribution from a clean checkout.
+| Step | Rescues | Root cause |
+|---|---|---|
+| 1. `RETR_TREE` + 5-term structure score | 29 / 34 | Grid nested inside a larger panel (`_33_`) |
+| 2. Morph dilate-then-erode (net thinning) | `_39_` | Fragmented contours |
+| 3. Aggressive CLAHE (clip=6, thresh_c=7) | `_17_`, `_24_` | Faint print |
+| 4. Symmetric morph closing (dilate=erode=3) | `_23_`, `_26_` | Broken grid lines |
 
-**Deep dive:** [`notebooks/04_solving.ipynb`](notebooks/04_solving.ipynb) covers the Kamal et al. Algorithm 1 baseline and why backtracking outperforms SA and genetic algorithms on 9×9 Sudoku, the MRV branching-factor argument, the three GT puzzles that fail solvability due to duplicate-digit annotation errors (caught by the benchmark harness), why the simulated-annealing solver was removed in the 2026-04-10 cleanup, and the Bhattarai et al. [\[2\]](#references) constraint-propagation roadmap for a 1.27×–2.91× follow-up speedup.
+Detection rate on the internal 38-image benchmark is 34/38 (89.5 %); on the external Wicht V2 test set it's 38/40 (95 %) — both comfortably ahead of Wicht's published ~87.5 % Hough baseline. The win isn't method sophistication — it's ensembling different preprocessors against a ground-truth-backed failure catalogue.
 
-## What I learned
-
-Every bullet below is something I got wrong first and fixed second. The project's whole history is in git — earlier iterations, abandoned approaches, and the measurements that forced each pivot.
-
-**Start end-to-end on day one, or you'll ship the wrong number.** For weeks this project had thorough *detection* evaluation — 38 hand-annotated ground-truth images, parameter sweeps over preprocessing knobs, per-corner Euclidean error, convex-hull IoU — and **zero OCR validation**. I was citing the CNN's 99.5% MNIST test accuracy as if it were the pipeline number. The data to evaluate the OCR layer was already sitting in the ground-truth file the whole time: every entry had a 9×9 digit grid right next to its corner annotations. Nobody had bothered to write `evaluate_ocr.py` that used them. When I finally did, the first honest number was **61% filled-cell accuracy on real photos** — a 38-percentage-point gap I had zero visibility into because I'd never measured the whole system together. Component-level numbers give false confidence about the pipeline: the detector could hit 89% and the CNN could hit 99.5% on their respective test sets while the system as a whole was failing, and nothing in my dashboard would have noticed.
-
-**"100% on clean test images, 0% on real photos."** That's a real benchmark result from an earlier iteration of the detector (it's in the 2026-04-03 commit message of the first big README rewrite). The first contour-based approach got perfect scores on clean synthetic grids but collapsed on the first batch of real newspaper photos I threw at it — crumpled paper, non-uniform lighting, headers and footers around the grid, and in one memorable case a crossword puzzle sharing the page. If I'd kept evaluating on the clean set alone I'd still be telling people the detector was perfect. The 38-image newspaper ground-truth set exists because "works on my clean test data" is a failure mode, not an accomplishment. A lot of the early legacy code that used to live in `_archive/legacy_detection/` — Hough transforms, Sobel edges, generalized Hough, border detection, line-segment detection — looked fine on synthetic inputs and fell over on the first real image.
-
-**Self-reported confidence is a lie — I learned this twice.** An early Sobel-based detector reported 1.00 confidence on every image while getting 61% of quads right against annotated corners. I later caught the same pattern in the OCR layer: the CNN reports a mean softmax confidence of 0.88 across filled cells while being wrong on roughly 38% of them on real photos. Softmax confidence is the model's opinion of itself; it's an output of the same function whose errors you're trying to measure, so of course it doesn't tell you whether the function is correct. The only honest evaluation is comparison against externally-annotated ground truth. After the second time I stopped trusting anything a model says about its own certainty without a GT benchmark to back it up.
-
-**The current detector is the fourth detector I wrote.** Before `detect_grid` there's a graveyard in the git history: standard Hough transform, generalized Hough transform, Sobel edge detection, line segment detection, several variants of border detection, and earlier single-pass contour pipelines I called Chains A/B/C before settling on D. I also drafted an elaborate three-stage 16-point detector (outer corners → interior line detection → intersection computation → header/footer refinement) in `.claude/responses/DETECTION_PLAN.md` that never shipped, because the simpler 4-step contour fallback chain outperformed it on the same ground-truth set. The final chain isn't an elegant first guess — it's the result of annotating 38 newspaper photos by hand, benchmarking candidate chains against them, and watching which step rescues which image. Step 1 uses `cv2.RETR_TREE` specifically because image `_33_` has the Sudoku grid nested inside a crossword block, so `RETR_EXTERNAL` was picking the crossword as the "outer" contour (IoU on that image went from 0.515 to 0.978 with the TREE + structure-scoring change alone). Step 3's aggressive CLAHE at clip=6 exists because image `_17_` has faint print that normal contrast enhancement couldn't recover. Steps 2 and 4 exist because `_23_`, `_26_`, and `_39_` had fragmented or broken contours that needed morphological closure. Every step in the chain is a "this specific image failed before" story made permanent.
-
-**Leaked test sets flatter the model.** My first attempt at fixing the 61% OCR number was to dump the 3,078 ground-truth cells straight into the training set. The next `evaluate_ocr.py` run reported **87.8% overall and 1 hallucination** — a near-perfect jump. I almost shipped that. It was textbook data leakage: the network had seen every cell it was being graded on, and the eval script was effectively a train-accuracy report. The honest fix was to replace those cells with **4,500 rendered-font digits across 370 system typefaces** (Helvetica, Times, Courier, Arial, etc.) plus 5,000 synthetic empty-cell variants, and accept the resulting **76.3% overall / 86 hallucinations** as the real baseline — up from 57.3% / 594 hallucinations before the fix. The leaked 87.8% number would have looked better on a CV and told me nothing about generalization. Along the way I also caught a **train/inference preprocessing mismatch**: the CNN trained on grayscale MNIST tensors in `[0, 1]` continuous, but inference was applying Otsu binarization, forcing pixels to `{0, 1}`. The network was seeing a distribution it was never trained on. Matching inference to training preprocessing bumped accuracy from 57.3% to 62.2% — a free 5 points from a bug that would have been obvious if I'd printed one training sample and one inference sample side by side at any point before the cleanup.
-
-**Look at the errors before retraining.** After the 61% number came in, my instinct was "the CNN isn't good enough, train a bigger one." Instead I wrote `notebooks/ocr_analysis.ipynb` first and classified every error into buckets: **41 wrong digits** (2.4% of filled cells — the CNN is confident and correct when it commits), **407 missed cells** (low-confidence refusals, not wrong predictions), **101 hallucinations** (empty cells confidently labeled as digits). The 407 missed cells had a median confidence of 0.58 — genuinely ambiguous inputs, not a threshold problem. A threshold sweep confirmed it: lowering the confidence threshold rescues correct digits at a **2:1 correct-to-wrong ratio**, which is net negative for puzzle solving (every "rescued" cell brings another half-cell of garbage into the solver input). Per-image the distribution is bimodal: **15 of 38 images hit ≥90% accuracy**, **9 of 38 stay below 50%**. The 9 bad ones are extreme cases — toilet-paper sudoku, a cat sitting on the puzzle, extreme motion blur, heavily faded print. The bottleneck is cell-crop quality coming out of the perspective warp, not the classifier itself. Training-data improvements (Chars74K, SVHN, francois-rozet/sudoku) would yield marginal +2–5% gains on top of the current score. The real leverage is wiring the 8-point piecewise warp into `/api/extract` so that cells from curved newsprint arrive with cleaner boundaries. That's why the Roadmap says "wire `extract_cells_piecewise`" and not "train a bigger CNN."
-
-**Every headline number needs a runnable script.** This README has claimed, at various points, "solver runs in <1 ms median," "CNN runs 14× faster than Tesseract," "24 KB ONNX deployment," and "89% detection accuracy" without footnotes. Writing the three benchmark harnesses in `evaluation/` turned the solver claim into a real **0.42 ms measurement**, exposed the Tesseract comparison as having no underlying benchmark anywhere in the code (I removed the line rather than fabricate a number to back it up), and caught that the "24 KB" footprint is a protobuf header pointing at a required **396 KB external weights sidecar** — the real deployment footprint is ~420 KB, and loading the `.onnx` file without its `.data` sidecar fails at session initialization. The solver benchmark also surfaced a bug in my *own* ground-truth file: 3 of the 38 annotated puzzles are unsolvable because the clue grids I hand-entered contain duplicate digits in a single row, which is a CSP contradiction. That's a data-quality issue, not a solver regression, and the benchmark harness catching it is a feature rather than a bug. Every metric in the Benchmarks table at the top of this README is now tied to a `python -m evaluation.*` command that any cloner can reproduce — not to my memory, not to stale CV_NOTES, not to earlier README drafts.
-
-## Quick start
+## Run it yourself
 
 ```bash
-git clone https://github.com/DataEdd/Sudoku-Solved.git
+git clone https://github.com/DataEdd/Sudoku-Solved
 cd Sudoku-Solved
 python -m venv venv && source venv/bin/activate
-pip install -r requirements-deploy.txt    # inference only (ONNX Runtime, no PyTorch)
+pip install -r requirements-deploy.txt      # inference-only deps (no PyTorch)
 uvicorn main:app --reload
+# → http://localhost:8000
 ```
 
-Visit **http://localhost:8000**. Use the camera capture to photograph a Sudoku puzzle, or click one of the six bundled sample images served from `/api/samples`.
+The production UI is at `/`. An interactive pipeline visualizer lives at `/debug` — upload a photo and walk every intermediate stage with adjustable preprocessing knobs. No public live demo is part of this project; the steps above get it running locally in under a minute.
 
-To train the CNN from scratch, install the full development requirements instead and run the training script:
+To retrain the CNN, re-run benchmarks, or regenerate the images in this README:
 
 ```bash
-pip install -r requirements.txt
-python -m app.ml.train                    # 30 epochs, ~15 min on CPU
-python -m app.ml.train --epochs 10        # quick run
+pip install -r requirements.txt              # full dev deps
+python -m app.ml.train                       # 30 epochs, ~15 min CPU / ~5 min MPS
+python -m app.ml.export_onnx --verify        # .pth → committed ONNX layout + parity check
+pytest tests/test_e2e_pipeline.py            # 5 regression tests against the 38-image set
+python -m evaluation.evaluate_detection      # detector benchmark
+python -m evaluation.evaluate_ocr            # OCR benchmark
+python -m evaluation.benchmark_solver        # solver latency benchmark
+python -m scripts.build_readme_assets        # rebuild every image this README references
 ```
 
-The `requirements-deploy.txt` install path above is the same minimal dep set CI uses to run `pytest tests/test_e2e_pipeline.py` on every push — a fresh clone can reproduce every Benchmarks-table number with it alone; PyTorch is only needed if you want to retrain.
-
-> **Ground-truth images.** The 38 newspaper photos used by the benchmark harnesses and regression tests live at `Examples/Ground Example/` and are committed to the repository (~2 MB total across 600×600 JPEGs). A fresh clone runs `python -m evaluation.evaluate_detection`, `python -m evaluation.evaluate_ocr`, and `pytest tests/test_e2e_pipeline.py` end-to-end with no external data setup. Larger training-only artefacts under `Examples/aug/` and `Examples/unsolved_dataset.zip` stay gitignored — see [`docs/data/README.md`](docs/data/README.md) for the full breakdown of which assets are in the repo vs. generated vs. bulk-only.
-
-**Regenerating the committed ONNX model.** If you retrain the CNN and want a drop-in replacement for the committed `app/ml/checkpoints/sudoku_cnn.onnx` (+ sidecar), run:
-
-```bash
-python -m app.ml.export_onnx --verify
-```
-
-This converts the latest `sudoku_cnn.pth` to the same external-data ONNX layout the production `CNNRecognizer` loads, and (with `--verify`) runs a PyTorch ↔ ONNX Runtime numerical parity check.
-
-## Development
-
-```bash
-# End-to-end regression suite
-pytest tests/test_e2e_pipeline.py -v
-
-# Per-stage benchmarks against the 38-image ground-truth set
-python -m evaluation.evaluate_detection      # detection rate + per-corner error + IoU
-python -m evaluation.evaluate_ocr            # filled/empty cell accuracy + per-cell breakdown
-python -m evaluation.benchmark_solver        # backtracking latency distribution
-```
-
-Each benchmark writes its results to `evaluation/*_results.json` so the committed numbers in the README are reproducible.
-
-The `/debug` route serves an interactive pipeline visualizer — upload an image and see the raw input, grayscale conversion, Gaussian blur, adaptive threshold, the top-15 contour candidates, the selected quad with draggable corner handles, the warped grid, and per-cell CNN predictions with confidence scores. It's a parameterized single-pass view of the detection pipeline with tunable preprocessing knobs (blur kernel, block size, threshold constant, epsilon, cell margin, empty-cell threshold, CNN confidence threshold), intended for poking at individual failure cases. The production `/api/extract` endpoint uses the deterministic `detect_grid` fallback chain instead, which has no tunable parameters.
-
-## Done
-
-- [x] **4-step deterministic detection chain** — `detect_grid` with `RETR_TREE` + 5-component structure-aware scoring (`grid_structure`, `cell_count`); 34/38 on the newspaper ground-truth benchmark with median per-corner error 1.6 px and median IoU 0.99
-- [x] **102K-parameter custom CNN** for per-cell digit recognition, trained on MNIST (labels 1-9 only) + 67 allowlist-validated Latin-digit system fonts + Chars74K held-out fonts + GT-grounded synthetic empty cells, with class-weighted CE loss to compensate for class 0's share of the training pool; **99.5% synthetic test accuracy** (font-disjoint Chars74K split), **66.6% filled / 98.4% empty / 81.3% overall** on real photos via detect_grid, **~84.7% / ~98.5% / ~90.8%** with ground-truth corners + piecewise warp (measured upper bound)
-- [x] **Architecture ablation study** — 9-config reduced pass of `evaluation/ablation.py` at fixed `dropout=0.3`, covering the full `depth ∈ {2,3,4} × channels ∈ {small,medium,large}` diagonal under a protocol matching v5.1 production (class-weighted CE, confidence threshold 0.50, v4.2 dataset, 20 epochs per config, GT-corners real-photo eval to isolate classifier quality from detection quality). Results in `evaluation/ablation_results.json`. On the isolation protocol `d4_c-medium_drop0.3` (405,898 params, depth 4 at the middle width) topped the ranking at **80.52% real filled / 97.57% real empty** on the 38-image GT, beating the shipped production baseline `d3_c-medium_drop0.3` (102,026 params) by **+5.2 filled points**. Depth=2 is clearly insufficient (all three depth=2 configs sit ≥19 points below the leader), and the 1.58M `d4_c-large` config is slightly overcapacity — 0.87 points below the 406K winner.
-- [x] **v6 retrain attempted + rolled back** — the ablation winner was promoted to `app/ml/model.py` and retrained at the full 30-epoch production protocol. The 30-epoch checkpoint matched its ablation synthetic-test numbers (0.9976 clean, 0.9943 augmented) but **regressed on the production `detect_grid` path**: 65.2% filled (−1.4 pts), 98.2% empty (−0.2 pts), 80.5% overall (−0.8 pts) vs. v5.1's shipped 66.6 / 98.4 / 81.3. The gap between GT corners and `detect_grid` was **~15 points for v6 vs. ~9 points for v5.1**, i.e. the larger 406K model is measurably MORE sensitive to the warp-quality degradation on curved newsprint than the smaller 102K model. Rolled back to v5.1. This is the clearest empirical confirmation of the `lesson_ocr_bottleneck_is_warp` finding — the classifier ceiling is real, and the GT-corners ablation protocol does not transfer to the production pipeline because it doesn't see the warp-quality tax. Lesson: larger classifiers are not drop-in upgrades when the input distribution is degraded by upstream pipeline stages; the roadmap's top lever is now the piecewise-warp item, not another CNN retrain.
-- [x] **Training → ONNX reproducibility** — `python -m app.ml.export_onnx` regenerates the committed `sudoku_cnn.onnx` + `sudoku_cnn.onnx.data` sidecar from a fresh `.pth` checkpoint, with PyTorch ↔ ONNX Runtime numerical parity verification
-- [x] **MRV-ordered backtracking solver** — 0.42 ms median latency on the 38-puzzle ground-truth benchmark; three ground-truth puzzles flagged as unsolvable due to duplicate-digit annotation errors (data-quality signal, not solver regression)
-- [x] **Reproducible benchmark harnesses** — `evaluation/evaluate_detection.py`, `evaluation/evaluate_ocr.py`, `evaluation/benchmark_solver.py`, each writing a committed `*_results.json`; every metric in the Benchmarks table above is reproducible from a clean checkout via a `python -m evaluation.*` command
-- [x] **Interactive `/debug` pipeline visualizer** — per-stage preview, tunable preprocessing parameters, draggable corner handles on a canvas overlay
-- [x] **GitHub Actions CI** — `.github/workflows/test.yml` runs `pytest tests/test_e2e_pipeline.py` on every push
-- [x] **End-to-end regression tests** — five `tests/test_e2e_pipeline.py` cases covering detection, OCR, solve rate, and per-image correctness
+Each benchmark writes its results to `evaluation/*_results.json`; every number cited in the Lessons section above is reproducible from a clean checkout.
 
 ## Roadmap
 
-- [ ] **Train v5.2 on Wicht's `v2_train.desc` training set** (160 real photos, disjoint from the 40-image test set — no leakage). The external-validation section above shows v5.1 gets 12.5% perfect-image rate on Wicht's V2 vs his 82.5%, and the gap is cleanly split by phone generation (40-50% perfect on 2013+ phones, 0% on 2007-era Sony Ericsson). Adding real in-distribution training photos should close most of the gap — estimated +30 to +50 percentage points on the V2 perfect-image rate. Planned as a separate checkpoint track, not a v5.1 replacement, so the out-of-distribution zero-shot number (v5.1) and the in-distribution supervised number (v5.2) can both be reported alongside each other as different points in the training-data / generalization trade-off space.
-- [ ] **Wire `extract_cells_piecewise` (`app/core/extraction.py`) into `/api/extract`** so curved newspaper pages use the 8-point piecewise warp. Currently it's only used in `evaluate_ocr.py --piecewise` and in the annotation preview. Measured upper bound on the 38-image GT is +6.2 filled-cell points over the production 4-point path, and the per-image failure analysis (`notebooks/failure_analysis.ipynb`) shows this is the dominant lever for the worst-performing images (`_1_2180648`, `_11_257486`, `_37_8708315`, partially `_0_1436352`). This is now the top lever on the roadmap because the 2026-04-11 v6 retrain experiment empirically confirmed that the classifier ceiling is real — throwing 4× the parameters at the problem regressed rather than helped. The warp-quality gap between GT corners and `detect_grid` is where the remaining headroom lives, and piecewise warp is the concrete way to close it. Implementation needs an automatic interior-corner detector to replace the GT-corner cheat currently used in `evaluate_ocr.py --piecewise`; candidate approaches documented in `docs/internal/pipeline_review_2026_04_11.md`.
-- [ ] Extend the ablation to the full 27-config grid by running the remaining `dropout ∈ {0.2, 0.5}` rows (18 additional configs, ~90 min on MPS via `python -m evaluation.ablation` without the `--dropout-only` flag). The reduced pass pinned `dropout=0.3`; the full grid would empirically test whether 0.3 is actually optimal, though given that the winning architecture didn't transfer to production the full grid is now lower-priority research rather than a promotion path.
-- [ ] **Grid-extent validation in `_find_best_quad_structured`** — add a post-warp check that downranks candidate quads whose outer strips show header/footer ink density or whose interior line count deviates from the expected ~10-per-axis Sudoku structure. Addresses the `_0_1436352` failure mode where the current scoring picks a quad that extends past the grid into the page header.
-- [ ] **Sudoku-vs-crossword disambiguation** — Sudokus have sparse ink (mostly blank cells), crosswords have dense ink (black blocks). Add a per-candidate black-fill ratio signal to `_find_best_quad_structured` with a ceiling around 40%, tuned carefully so near-completed Sudokus aren't falsely rejected. Addresses the `_4_3941682` failure mode where the detector locks onto a crossword puzzle on the same newspaper page.
-- [ ] Optionally mirror the 38-image ground-truth set as a standalone HuggingFace dataset for discoverability. Not required for reproducibility — the images now ship inside the repo at `Examples/Ground Example/` (~2 MB). The HuggingFace mirror would surface the data to ML-dataset search, add a permanent DOI-style citation target, and lower the barrier for anyone wanting the corners annotation schema without cloning the whole project.
-- [ ] Extend GitHub Actions CI to run `evaluate_detection.py` as a regression guard alongside the existing `test_e2e_pipeline.py` suite. No longer blocked on data availability — the GT images are committed — so the remaining work is just wiring the script into `.github/workflows/test.yml`.
-- [ ] Add an end-to-end latency benchmark covering the full `image → solved grid` pipeline, not just per-stage timings.
-- [ ] Explore constraint-propagation solvers (arc-consistency, naked pairs, hidden singles) as a faster-than-backtracking alternative for expert-level puzzles — the 2025 comparative study of Bhattarai et al. [\[2\]](#references) reports 1.27×–2.91× speedups for heuristic-based CSP solvers over pure recursive backtracking.
-- [ ] Re-annotate the three ground-truth puzzles with duplicate-digit transcription errors that the solver benchmark surfaced, bringing the solvable count from 35/38 to 38/38.
+- **Automatic interior-corner detector** — wire `extract_cells_piecewise` into `/api/extract` so production gets the +6.2 measured filled-cell points. The hard part is building a robust detector for the ⅓ / ⅔ intersection corners on the already-warped grid: candidates are morphological line projection, Hough-line clustering near the expected ⅓ and ⅔ rows/cols, or a Harris response filtered to near-ideal positions.
+- **Real-photo training data** — current training is zero-shot on real newspaper photos (MNIST + rendered printed digits + synthetic empties). Adding a disjoint real-photo training split should close the largest remaining OCR gap.
+- **Grid-extent and sudoku-vs-crossword disambiguation** in the scoring function to close the two residual detection failure modes where the scorer picks a quad adjacent to the grid instead of the grid itself.
 
 ## References
 
 <a id="references"></a>
 
-1. **S. Kamal, S. S. Chawla, and N. Goel**, "Detection of Sudoku Puzzle using Image Processing and Solving by Backtracking, Simulated Annealing and Genetic Algorithms: A Comparative Analysis," in *2015 Third International Conference on Image Information Processing (ICIIP)*, IEEE, Dec. 2015, pp. 179–184.
-2. **A. Bhattarai, D. Uprety, P. Pathak, S. N. Shrestha, S. Narkarmi, and S. Sigdel**, "A Study Of Sudoku Solving Algorithms: Backtracking and Heuristic," *arXiv preprint* [arXiv:2507.09708](https://arxiv.org/abs/2507.09708), July 2025.
+1. **S. Kamal, S. S. Chawla, N. Goel**. *Detection of Sudoku Puzzle using Image Processing and Solving by Backtracking, Simulated Annealing and Genetic Algorithms: A Comparative Analysis.* ICIIP 2015.
+2. **B. Wicht, J. Hennebert**. *Camera-based Sudoku recognition with Deep Belief Network.* ICoSoCPaR 2014. [IEEE Xplore](https://ieeexplore.ieee.org/document/7007986).
+3. **A. Bhattarai et al.** *A Study of Sudoku Solving Algorithms: Backtracking and Heuristic.* arXiv:2507.09708, 2025.
 
 ## License
 
-MIT
+MIT on the code. The 38-image benchmark dataset in `Examples/Ground Example/` is CC BY 4.0 (derived from [wichtounet/sudoku_dataset](https://github.com/wichtounet/sudoku_dataset)).
