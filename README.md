@@ -72,7 +72,9 @@ Detection was benchmarked against 38 hand-annotated images while OCR had no real
 
 Detection papers mostly report binary hit/miss; I wanted something richer, so the detector emits a continuous 0-1 area/shape score that ranks every candidate quad. Starting point was the classical three-term version from the literature: `area + squareness + centeredness`. That works most of the time and fails in an interesting way. On image `_33_`, it ranks the enclosing *SUDOKU* article panel — a rectangle that contains the header, the instructions, *and* the grid — above the Sudoku grid itself. The correct answer scores lower than a wrong answer that happens to be larger and equally square. The fix is two structure-aware terms that warp each candidate to 200×200 and probe the interior for 9×9-grid-like content (a line-peak count and a cell-component count). With those added, the grid wins on `_33_`.
 
-![Classical vs 5-term structure-aware score on _33_, and the crossword failure](docs/lessons/scoring.png)
+![Top-left: classical score picks the article panel on _33_. Top-right: 5-term score picks the grid. Bottom: on _4_ the 5-term score still picks the crossword.](docs/lessons/scoring.png)
+
+*Top-left — classical 3-term score on `_33_`: green quad is the top-ranked candidate (the *SUDOKU* article panel); red is the Sudoku grid, ranked below. Top-right — same image, 5-term structure-aware score: green quad is the Sudoku grid, now the top-ranked candidate. Bottom — `_4_`, a newspaper page with a crossword above a Sudoku: the green quad is the top 5-term candidate — still the crossword.*
 
 But the structure-aware score isn't a general fix — it has its own limits. Image `_4_` is the residual failure mode: a newspaper page with a crossword above the Sudoku. The 5-term score still picks the crossword, because the structure check rewards *anything* that looks like a regular grid — 9×9 Sudokus, 15×15 crosswords, and word-search puzzles all pass the line-peak and cell-count tests. No geometry-plus-structure score operating on a single quad can tell them apart; the distinguishing signal is ink density (sparse digits for Sudoku, dense black blocks for crosswords), which isn't currently encoded anywhere in the pipeline. The broader point: any self-designed score only sees the signals you bothered to encode. Mine captures geometry and interior line structure. It doesn't capture density, layout semantics, or adjacency relationships between multiple candidates — so the failure modes it has left are legible rather than arbitrary, but they're still there.
 
@@ -87,7 +89,9 @@ Instinct after the first OCR benchmarks came in was "train a bigger CNN." Decomp
 
 On a curved-paper image, the 4-point warp stretches the grid to a square by its 4 outer corners and leaves the interior bowed against the algorithm's ideal lines. The 8-point piecewise warp uses the interior ⅓ / ⅔ intersection corners as additional anchors and straightens each 3×3 box independently — real grid lines line up with the algorithm's overlay:
 
-![4-point vs 8-point piecewise warp on a curved-paper sudoku](docs/lessons/warp.png)
+![Left: 4-point warp leaves the interior of image _19_ bowed. Right: 8-point piecewise warp straightens each 3×3 box against its own homography.](docs/lessons/warp.png)
+
+*Left — 4-point warp of image `_19_` (toilet-paper Sudoku): the algorithm's straight grid overlay drifts off the real cell boundaries. Right — 8-point piecewise warp on the same image: grid lines align with the overlay.*
 
 The engineering arc went 4-point → 8-point piecewise (recovers +6.2 filled-cell points with manually-annotated interior corners; production needs an automatic interior-corner detector before this can ship, which is a grid-line detection problem on the already-warped image). A per-cell warp (one homography per Sudoku cell, ~100 interior corners to detect) would chase more of the residual, but the 8-point version isn't in production yet — that's where the next measured win actually lives.
 

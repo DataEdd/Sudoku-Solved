@@ -207,12 +207,8 @@ def pick_hero_candidates(
     return accepted
 
 
-# Dark neutral used for title strips; outputs are BGRA PNGs where BG areas
-# go fully transparent (alpha=0) so the image reads on both GitHub themes.
-STRIP_BGR = (32, 32, 32)
-TEXT_BGR = (235, 235, 235)
-
-
+# All outputs are BGRA PNGs where the non-image area is fully transparent
+# (alpha=0) so the collage reads on both light and dark GitHub themes.
 def _to_bgra(image: np.ndarray, alpha: int = 255) -> np.ndarray:
     """Promote a BGR image to BGRA with uniform alpha."""
     if image.shape[2] == 4:
@@ -337,26 +333,6 @@ def candidate_quads(image: np.ndarray) -> List[Tuple[np.ndarray, float]]:
     return out
 
 
-def _title_strip_bgra(
-    width: int, text: str, height: int = 46,
-) -> np.ndarray:
-    """Centered title strip: dark bar + light text, fully opaque BGRA."""
-    strip = np.zeros((height, width, 4), dtype=np.uint8)
-    strip[:, :, :3] = STRIP_BGR
-    strip[:, :, 3] = 255
-    font = cv2.FONT_HERSHEY_DUPLEX
-    scale = 0.68
-    thickness = 1
-    (tw, th), _ = cv2.getTextSize(text, font, scale, thickness)
-    x = max(10, (width - tw) // 2)
-    y = int(height * 0.7)
-    cv2.putText(
-        strip, text, (x, y), font, scale, TEXT_BGR,
-        thickness, cv2.LINE_AA,
-    )
-    return strip
-
-
 def _draw_quads(
     image: np.ndarray, winner: np.ndarray,
     runner_up: Optional[np.ndarray] = None,
@@ -370,26 +346,25 @@ def _draw_quads(
     return canvas
 
 
-def _labelled_panel_bgra(
-    image: np.ndarray, label: str, panel_w: int, panel_h: int,
+def _panel_bgra(
+    image: np.ndarray, panel_w: int, panel_h: int,
 ) -> np.ndarray:
-    """Labelled BGRA panel: opaque title strip + opaque image, transparent
-    around the letterboxed image so the panel sits cleanly on any bg."""
-    strip_h = 46
-    body_h = panel_h - strip_h
+    """BGRA panel: opaque image letterboxed on a fully transparent canvas.
+
+    No baked-in title — captions live in surrounding Markdown prose so
+    they inherit GitHub's theme-aware text color.
+    """
     ih, iw = image.shape[:2]
-    scale = min(panel_w / iw, body_h / ih)
+    scale = min(panel_w / iw, panel_h / ih)
     new_w, new_h = int(iw * scale), int(ih * scale)
     resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    body = np.zeros((body_h, panel_w, 4), dtype=np.uint8)  # transparent
+    panel = np.zeros((panel_h, panel_w, 4), dtype=np.uint8)
     ox = (panel_w - new_w) // 2
-    oy = (body_h - new_h) // 2
-    body[oy:oy + new_h, ox:ox + new_w, :3] = resized
-    body[oy:oy + new_h, ox:ox + new_w, 3] = 255
-
-    strip = _title_strip_bgra(panel_w, label, strip_h)
-    return np.vstack([strip, body])
+    oy = (panel_h - new_h) // 2
+    panel[oy:oy + new_h, ox:ox + new_w, :3] = resized
+    panel[oy:oy + new_h, ox:ox + new_w, 3] = 255
+    return panel
 
 
 def _pick_scoring_quads(
@@ -454,22 +429,13 @@ def build_scoring_demo(records: List[dict]) -> None:
     panel_c = _draw_quads(img4, five4, None) if five4 is not None else img4
 
     # Layout: top row is two _33_ panels side-by-side; bottom row is a wider
-    # crossword-failure panel spanning both columns with centered title.
+    # crossword-failure panel spanning both columns. No baked-in captions —
+    # those live in the README prose around the image.
     panel_w, panel_h = 720, 540
     top_w = 2 * panel_w
-    a = _labelled_panel_bgra(
-        panel_a, "Classical score (area + squareness + centeredness)",
-        panel_w, panel_h,
-    )
-    b = _labelled_panel_bgra(
-        panel_b, "5-term structure-aware score (grid-line + cell-count)",
-        panel_w, panel_h,
-    )
-    c = _labelled_panel_bgra(
-        panel_c,
-        "5-term score still picks the crossword over the sudoku below",
-        top_w, panel_h,
-    )
+    a = _panel_bgra(panel_a, panel_w, panel_h)
+    b = _panel_bgra(panel_b, panel_w, panel_h)
+    c = _panel_bgra(panel_c, top_w, panel_h)
     collage = np.vstack([np.hstack([a, b]), c])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -592,10 +558,8 @@ def build_warp_demo(records: List[dict]) -> None:
     warp8_lined = draw_grid_lines(warp8)
 
     panel_w, panel_h = 720, 720
-    a = _labelled_panel_bgra(warp4_lined, "4-point warp", panel_w, panel_h)
-    b = _labelled_panel_bgra(
-        warp8_lined, "8-point piecewise warp", panel_w, panel_h,
-    )
+    a = _panel_bgra(warp4_lined, panel_w, panel_h)
+    b = _panel_bgra(warp8_lined, panel_w, panel_h)
     collage = np.hstack([a, b])
 
     LESSONS_DIR.mkdir(parents=True, exist_ok=True)
