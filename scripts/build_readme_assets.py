@@ -173,10 +173,26 @@ def paint_solution(
 def pick_hero_candidates(
     records: List[dict], recognizer: CNNRecognizer, want: int = 6
 ) -> List[Tuple[dict, np.ndarray, List[List[int]], List[List[int]]]]:
-    """Return up to `want` (record, outer_corners, clue_grid, solved_grid)
-    tuples where the full production pipeline succeeds end-to-end AND the
-    solver's output is consistent with the GT clue grid."""
-    accepted = []
+    """Return up to `want` distinct hero panels meeting every bar:
+
+    * production `detect_grid` succeeds,
+    * every GT clue is OCR'd correctly (full-pipeline truth),
+    * the solver completes,
+    * the puzzle has at least one empty cell to fill (so the green
+      overlay demonstrates the solver, not just a pre-solved photo),
+    * each underlying GT grid appears at most once (the GT set has
+      multiple photos of the same Wikipedia puzzle on different
+      surfaces — those would read as augmentations in a hero collage).
+    """
+    def _grid_key(puzzle: List[List[int]]) -> Tuple[Tuple[int, ...], ...]:
+        return tuple(tuple(row) for row in puzzle)
+
+    def _empty_count(puzzle: List[List[int]]) -> int:
+        return sum(1 for row in puzzle for v in row if v == 0)
+
+    seen: set = set()
+    accepted: List[Tuple[dict, np.ndarray, List[List[int]], List[List[int]]]] = []
+
     for rec in records:
         path = PROJECT_ROOT / rec["path"]
         if not path.exists():
@@ -189,16 +205,23 @@ def pick_hero_candidates(
         if corners is None:
             continue
 
+        puzzle = puzzle_from_gt(rec["grid"])
+        if _empty_count(puzzle) == 0:
+            continue  # GT solution photo — nothing for the solver to show.
+
         warped = E.perspective_transform(img, corners)
         read = ocr_grid(warped, recognizer)
-
         if not all_clues_read_correctly(read, rec["grid"]):
             continue
 
-        puzzle = puzzle_from_gt(rec["grid"])
         solved, _nodes, ok = backtracking(puzzle)
         if not ok:
             continue
+
+        key = _grid_key(puzzle)
+        if key in seen:
+            continue
+        seen.add(key)
 
         accepted.append((rec, corners, puzzle, solved))
         print(f"  hero candidate: {rec['path']}")
@@ -274,6 +297,8 @@ def build_hero(records: List[dict], recognizer: CNNRecognizer) -> None:
         collage = np.vstack([top, bot])
     elif len(panels) == 4:
         collage = np.vstack([_row(panels[0:2]), _row(panels[2:4])])
+    elif len(panels) == 3:
+        collage = _row(panels)
     else:
         collage = _row(panels)
 
